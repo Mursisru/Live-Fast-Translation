@@ -1,0 +1,49 @@
+<UserControl x:Class="LiveFastTranslation.Views.Controls.HotkeyBox"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:LiveFastTranslation.Views.Controls"
+             xmlns:conv="clr-namespace:LiveFastTranslation.Views.Converters"
+             Focusable="False">
+    <UserControl.Resources>
+        <conv:StringNotEmptyToVisibilityConverter x:Key="StringNotEmptyToVisibility" />
+    </UserControl.Resources>
+
+    <StackPanel>
+        <Grid>
+            <TextBox x:Name="InputBox"
+                     IsReadOnly="True"
+                     Cursor="Hand"
+                     AutomationProperties.AutomationId="{Binding InputAutomationId, RelativeSource={RelativeSource AncestorType={x:Type local:HotkeyBox}}}"
+                     ToolTip="Нажмите на поле и введите сочетание клавиш. Backspace — очистить."
+                     Text="{Binding Hotkey, RelativeSource={RelativeSource AncestorType={x:Type local:HotkeyBox}}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     PreviewKeyDown="InputBox_PreviewKeyDown"
+                     GotKeyboardFocus="InputBox_GotKeyboardFocus"
+                     LostKeyboardFocus="InputBox_LostKeyboardFocus" />
+            <TextBlock Text="Нажмите и задайте сочетание"
+                       Margin="11,0,0,0"
+                       VerticalAlignment="Center"
+                       FontSize="12.5"
+                       Foreground="{DynamicResource TextMutedBrush}"
+                       IsHitTestVisible="False">
+                <TextBlock.Style>
+                    <Style TargetType="{x:Type TextBlock}">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Hotkey, RelativeSource={RelativeSource AncestorType={x:Type local:HotkeyBox}}}"
+                                         Value="">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </Grid>
+
+        <TextBlock Text="{Binding ValidationMessage, RelativeSource={RelativeSource AncestorType={x:Type local:HotkeyBox}}}"
+                   Visibility="{Binding ValidationMessage, RelativeSource={RelativeSource AncestorType={x:Type local:HotkeyBox}}, Converter={StaticResource StringNotEmptyToVisibility}}"
+                   Foreground="{DynamicResource ErrorBrush}"
+                   FontSize="11"
+                   TextWrapping="Wrap"
+                   Margin="1,4,0,0" />
+    </StackPanel>
+</UserControl>
