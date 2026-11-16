@@ -5,3 +5,4 @@ artifacts/
 *.log
 *.png~
 TestResults/
+argos-packages/
