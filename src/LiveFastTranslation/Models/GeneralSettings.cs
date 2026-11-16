@@ -13,4 +13,7 @@ public sealed class GeneralSettings
     public bool AllowClipboardCapture { get; set; } = true;
 
     public bool ShowTrayNotifications { get; set; } = true;
+
+    /// <summary>Show the translation capsule automatically when the user selects text.</summary>
+    public bool AutoShowOverlay { get; set; }
 }

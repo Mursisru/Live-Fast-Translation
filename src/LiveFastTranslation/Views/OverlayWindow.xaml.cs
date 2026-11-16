@@ -20,6 +20,7 @@ public partial class OverlayWindow : Window
 {
     private const double ShadowMargin = 10;
     private const double MinimumCapsuleWidth = 240;
+    private const double MinimumMinimalCapsuleWidth = 80;
     private const double AnchorGap = 6;
     private const double ControlChromeWidth = 250;
     private const double MinimalChromeWidth = 30;
@@ -139,7 +140,10 @@ public partial class OverlayWindow : Window
     private void SetWindowSize(double width)
     {
         var maxWindowWidth = GetMaxWindowWidth();
-        var minWindowWidth = MinimumCapsuleWidth + ShadowMargin * 2;
+        var minimumCapsuleWidth = ViewModel.ShowOverlayControls
+            ? MinimumCapsuleWidth
+            : MinimumMinimalCapsuleWidth;
+        var minWindowWidth = minimumCapsuleWidth + ShadowMargin * 2;
         Width = Math.Clamp(width, minWindowWidth, Math.Max(minWindowWidth, maxWindowWidth));
 
         // The window height is owned by WPF (SizeToContent=Height), so wrapped text

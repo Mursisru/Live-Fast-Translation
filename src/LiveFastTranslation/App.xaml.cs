@@ -32,6 +32,7 @@ public partial class App : Application
     private OverlayController? _overlay;
     private HotkeyService? _hotkeys;
     private TypingMonitor? _typingMonitor;
+    private SelectionMonitor? _selectionMonitor;
     private TrayService? _tray;
     private SettingsWindow? _settingsWindow;
 
@@ -121,6 +122,10 @@ public partial class App : Application
             _history);
         _overlay.SettingsRequested += (_, _) => OpenSettings();
 
+        _selectionMonitor = new SelectionMonitor();
+        _selectionMonitor.SelectionSettled += OnSelectionSettled;
+        _selectionMonitor.Enabled = settingsService.Current.General.AutoShowOverlay;
+
         _hotkeys = new HotkeyService();
         _hotkeys.HotkeyPressed += OnHotkeyPressed;
         ApplyHotkeys(settingsService.Current.Hotkeys, notifyErrors: false);
@@ -192,60 +197,73 @@ public partial class App : Application
         }
 
         var command = settings.Provider.GetProfile(ProviderKind.ArgosTranslate).Model;
-        var (source, target) = ResolveArgosWarmUpPair(settings);
+        var pairs = ResolveArgosWarmUpPairs(settings);
         _ = Task.Run(async () =>
         {
-            try
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+            foreach (var (source, target) in pairs)
             {
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
-                var loaded = await ArgosTranslationWorker.Shared
-                    .WarmUpAsync(command ?? string.Empty, source, target, timeout.Token)
-                    .ConfigureAwait(false);
-                if (loaded)
+                try
                 {
-                    AppLogger.Info($"Argos Translate: локальный движок прогрет ({source}>{target}).");
+                    var loaded = await ArgosTranslationWorker.Shared
+                        .WarmUpAsync(command ?? string.Empty, source, target, timeout.Token)
+                        .ConfigureAwait(false);
+                    if (loaded)
+                    {
+                        AppLogger.Info($"Argos Translate: локальный движок прогрет ({source}>{target}).");
+                    }
                 }
-            }
-            catch (Exception exception)
-            {
-                AppLogger.Warn($"Argos Translate: прогрев не удался: {exception.Message}");
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception exception)
+                {
+                    AppLogger.Warn($"Argos Translate: прогрев {source}>{target} не удался: {exception.Message}");
+                }
             }
         });
     }
 
     /// <summary>
-    /// Picks the pair worth preloading: the pair of the last translation while it still
-    /// matches the configured target, otherwise English → target (Russian for English).
+    /// Preloads both directions used by the automatic language choice: the last translation
+    /// first when it matches one of them, then the opposite direction.
     /// </summary>
-    private static (string Source, string Target) ResolveArgosWarmUpPair(AppSettings settings)
+    private static IReadOnlyList<(string Source, string Target)> ResolveArgosWarmUpPairs(AppSettings settings)
     {
-        var target = LanguageCatalog.ToArgosCode(settings.TargetLanguage);
+        var native = LanguageCatalog.ToArgosCode(settings.TargetLanguage);
+        var other = native.Equals("en", StringComparison.OrdinalIgnoreCase) ? "ru" : "en";
+        var pairs = new List<(string Source, string Target)>
+        {
+            (other, native),
+            (native, other)
+        };
+
         var history = settings.History;
         if (history.Count > 0)
         {
             var last = history[0];
-            var sourceCode = last.SourceLanguage;
-            if (string.IsNullOrWhiteSpace(sourceCode)
-                || sourceCode.Equals("auto", StringComparison.OrdinalIgnoreCase))
+            var lastTarget = LanguageCatalog.ToArgosCode(last.TargetLanguage);
+            var lastSource = last.SourceLanguage;
+            if (string.IsNullOrWhiteSpace(lastSource)
+                || lastSource.Equals("auto", StringComparison.OrdinalIgnoreCase))
             {
-                sourceCode = LanguageDetector.Detect(last.SourceText);
+                lastSource = LanguageDetector.Detect(last.SourceText);
             }
 
-            var lastTarget = LanguageCatalog.ToArgosCode(last.TargetLanguage);
-            if (string.Equals(lastTarget, target, StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(sourceCode)
-                && !sourceCode.Equals("auto", StringComparison.OrdinalIgnoreCase))
+            var source = LanguageCatalog.ToArgosCode(lastSource);
+            var preferred = pairs.FindIndex(
+                pair => pair.Source.Equals(source, StringComparison.OrdinalIgnoreCase)
+                        && pair.Target.Equals(lastTarget, StringComparison.OrdinalIgnoreCase));
+            if (preferred > 0)
             {
-                var source = LanguageCatalog.ToArgosCode(sourceCode);
-                if (source.Length > 0 && !source.Equals(target, StringComparison.OrdinalIgnoreCase))
-                {
-                    return (source, target);
-                }
+                var pair = pairs[preferred];
+                pairs.RemoveAt(preferred);
+                pairs.Insert(0, pair);
             }
         }
 
-        var fallback = target.Equals("en", StringComparison.OrdinalIgnoreCase) ? "ru" : "en";
-        return (fallback, target);
+        return pairs;
     }
 
     private void SyncAutostart(AppSettings settings)
@@ -325,6 +343,23 @@ public partial class App : Application
         catch (Exception exception)
         {
             AppLogger.Error("Ошибка AI-перевода предложения.", exception);
+        }
+    }
+
+    private async void OnSelectionSettled(object? sender, EventArgs e)
+    {
+        if (_shuttingDown || _overlay is null || _selectionMonitor?.Enabled != true)
+        {
+            return;
+        }
+
+        try
+        {
+            await _overlay.AutoTranslateSelectionAsync();
+        }
+        catch (Exception exception)
+        {
+            AppLogger.Error("Ошибка авто-перевода выделения.", exception);
         }
     }
 
@@ -412,6 +447,11 @@ public partial class App : Application
         }
 
         _typingMonitor?.ApplySettings(settings.AiMode);
+        if (_selectionMonitor is not null)
+        {
+            _selectionMonitor.Enabled = settings.General.AutoShowOverlay;
+        }
+
         var typingError = settings.AiMode.Enabled ? _typingMonitor?.LastError : null;
         if (!string.Equals(typingError, _lastTypingError, StringComparison.Ordinal))
         {
@@ -525,6 +565,7 @@ public partial class App : Application
         _settingsWindow = null;
 
         _typingMonitor?.Dispose();
+        _selectionMonitor?.Dispose();
         _hotkeys?.Dispose();
         _overlay?.Dispose();
         ArgosTranslationWorker.Shared.Shutdown();

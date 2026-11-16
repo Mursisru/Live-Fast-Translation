@@ -32,14 +32,19 @@ internal static class NativeMethods
     public const int WS_EX_TRANSPARENT = 0x00000020;
 
     public const int WH_KEYBOARD_LL = 13;
+    public const int WH_MOUSE_LL = 14;
     public const int HC_ACTION = 0;
     public const uint LLKHF_INJECTED = 0x00000010;
+    public const int WM_LBUTTONUP = 0x0202;
 
     public const int GWL_STYLE = -16;
     public const int ES_PASSWORD = 0x0020;
+    public const int ES_READONLY = 0x0800;
 
     public const uint EVENT_OBJECT_FOCUS = 0x8005;
+    public const uint EVENT_OBJECT_TEXTSELECTIONCHANGED = 0x8014;
     public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+    public const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
     public const int OBJID_WINDOW = 0;
 
     public const int SWP_NOSIZE = 0x0001;
@@ -257,6 +262,16 @@ internal static class NativeMethods
     {
         public uint vkCode;
         public uint scanCode;
+        public uint flags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSLLHOOKSTRUCT
+    {
+        public POINT pt;
+        public uint mouseData;
         public uint flags;
         public uint time;
         public IntPtr dwExtraInfo;

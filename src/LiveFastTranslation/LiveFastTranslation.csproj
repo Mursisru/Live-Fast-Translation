@@ -25,6 +25,9 @@
 
   <ItemGroup>
     <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\app-icon.png" />
+    <Resource Include="Assets\icon-ai.png" />
+    <Resource Include="Assets\icon-settings.png" />
   </ItemGroup>
 
   <ItemGroup>

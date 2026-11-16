@@ -1,4 +1,5 @@
 using LiveFastTranslation.Models;
+using LiveFastTranslation.Interop;
 using LiveFastTranslation.Services.History;
 using LiveFastTranslation.Services.Infrastructure;
 using LiveFastTranslation.Services.Settings;
@@ -28,6 +29,7 @@ public sealed class OverlayController : IDisposable
     private TextCaptureResult? _capture;
     private string? _sourceText;
     private bool _isAiSource;
+    private bool _autoCaptureActive;
     private bool _disposed;
 
     public OverlayController(
@@ -63,7 +65,7 @@ public sealed class OverlayController : IDisposable
             }
             else
             {
-                _ = RetranslateAsync(settings.Current.TargetLanguage);
+                _ = RetranslateAsync(TranslationTargetResolver.Resolve(_sourceText, settings.Current.TargetLanguage));
             }
         };
         ViewModel.TargetLanguageChanged += (_, code) => OnTargetLanguageChanged(code);
@@ -99,21 +101,20 @@ public sealed class OverlayController : IDisposable
 
         var cts = BeginRequest();
         var requestId = _requestId;
-        var settings = _settings.Current;
-        var target = settings.TargetLanguage;
+        var nativeLanguage = _settings.Current.TargetLanguage;
 
         _capture = null;
         _sourceText = null;
         _isAiSource = false;
 
-        ViewModel.BeginLoading(string.Empty, target, aiMode: false);
+        ViewModel.BeginLoading(string.Empty, nativeLanguage, aiMode: false);
         _window.FitToText("Перевод…");
         _window.ShowOverlay();
 
         try
         {
             var capture = await _captureService
-                .CaptureSelectedTextAsync(settings.General.AllowClipboardCapture, cts.Token)
+                .CaptureSelectedTextAsync(_settings.Current.General.AllowClipboardCapture, cts.Token)
                 .ConfigureAwait(true);
 
             if (IsStale(requestId, cts))
@@ -128,13 +129,7 @@ public sealed class OverlayController : IDisposable
                 return;
             }
 
-            _capture = capture;
-            _sourceText = capture.Text;
-            _isAiSource = false;
-            ViewModel.SetSourcePreview(capture.Text);
-            _window.SetAnchor(capture.AnchorBounds);
-
-            await TranslateCoreAsync(requestId, capture.Text, target, cts.Token).ConfigureAwait(true);
+            await RunSelectionTranslationAsync(capture, requestId, cts.Token).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -160,6 +155,111 @@ public sealed class OverlayController : IDisposable
         }
     }
 
+    /// <summary>
+    /// Silently reads the current selection and translates it when a non-empty selection appears.
+    /// Used by the optional auto-show mode; an empty selection (a plain click or caret move) never
+    /// shows the overlay and never interrupts a translation that is already on screen.
+    /// </summary>
+    public async Task AutoTranslateSelectionAsync()
+    {
+        if (_disposed || _autoCaptureActive)
+        {
+            return;
+        }
+
+        var foreground = NativeMethods.GetForegroundWindow();
+        if (foreground != IntPtr.Zero)
+        {
+            NativeMethods.GetWindowThreadProcessId(foreground, out var processId);
+            if (processId == (uint)Environment.ProcessId)
+            {
+                return;
+            }
+        }
+
+        _autoCaptureActive = true;
+        try
+        {
+            var capture = await _captureService
+                .CaptureSelectedTextAsync(allowClipboardFallback: false)
+                .ConfigureAwait(true);
+
+            if (_disposed || !capture.HasText)
+            {
+                return;
+            }
+
+            // The same selection in the same field must not re-open or restart the capsule.
+            if (_window.IsOverlayVisible
+                && string.Equals(capture.Text, _sourceText, StringComparison.Ordinal)
+                && _capture?.TargetWindow == capture.TargetWindow)
+            {
+                return;
+            }
+
+            var cts = BeginRequest();
+            var requestId = _requestId;
+            try
+            {
+                await RunSelectionTranslationAsync(capture, requestId, cts.Token).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (TranslationException exception)
+            {
+                if (!IsStale(requestId, cts))
+                {
+                    ShowError(exception.Message);
+                }
+            }
+            catch (Exception exception)
+            {
+                AppLogger.Error("Неожиданная ошибка авто-перевода выделения.", exception);
+                if (!IsStale(requestId, cts))
+                {
+                    ShowError("Неожиданная ошибка. Подробности записаны в журнал.");
+                }
+            }
+            finally
+            {
+                CompleteRequest(cts);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Auto mode is best-effort: an application without UI Automation text support
+            // must not produce error balloons on every click.
+            AppLogger.Warn($"Авто-перевод: не удалось прочитать выделение: {exception.Message}");
+        }
+        finally
+        {
+            _autoCaptureActive = false;
+        }
+    }
+
+    private async Task RunSelectionTranslationAsync(
+        TextCaptureResult capture,
+        int requestId,
+        CancellationToken cancellationToken)
+    {
+        var target = TranslationTargetResolver.Resolve(capture.Text, _settings.Current.TargetLanguage);
+
+        _capture = capture;
+        _sourceText = capture.Text;
+        _isAiSource = false;
+
+        ViewModel.BeginLoading(capture.Text, target, aiMode: false);
+        _window.SetAnchor(capture.AnchorBounds);
+        _window.FitToText("Перевод…");
+        if (!_window.IsOverlayVisible)
+        {
+            _window.ShowOverlay();
+        }
+
+        await TranslateCoreAsync(requestId, capture.Text, target, cancellationToken).ConfigureAwait(true);
+    }
+
     public async Task TranslateAiSentenceAsync(string sentence, IntPtr targetWindow)
     {
         if (_disposed || string.IsNullOrWhiteSpace(sentence))
@@ -170,7 +270,7 @@ public sealed class OverlayController : IDisposable
         var cts = BeginRequest();
         var requestId = _requestId;
         var settings = _settings.Current;
-        var target = settings.TargetLanguage;
+        var target = TranslationTargetResolver.Resolve(sentence, settings.TargetLanguage);
 
         _capture = null;
         _sourceText = sentence.Trim();
@@ -268,6 +368,7 @@ public sealed class OverlayController : IDisposable
         }
 
         ViewModel.SetResult(result);
+        ViewModel.SelectLanguageSilently(result.TargetLanguage);
         _window.FitToText(result.TranslatedText);
 
         _historyService.Add(new TranslationHistoryEntry
@@ -332,7 +433,7 @@ public sealed class OverlayController : IDisposable
                 return;
             }
 
-            ViewModel.SetError($"Не удалось заменить текст. {outcome.Error}");
+            ViewModel.SetError($"Не заменено. {outcome.Error}");
         }
         catch (OperationCanceledException)
         {
@@ -340,7 +441,7 @@ public sealed class OverlayController : IDisposable
         catch (Exception exception)
         {
             AppLogger.Error("Ошибка замены текста.", exception);
-            ViewModel.SetError("Не удалось заменить текст. Подробности записаны в журнал.");
+            ViewModel.SetError("Не заменено. Подробности записаны в журнал.");
         }
     }
 
@@ -351,8 +452,8 @@ public sealed class OverlayController : IDisposable
             return;
         }
 
-        _settings.Update(settings => settings.TargetLanguage = code);
-
+        // The dropdown only retranslates the current text; it must not overwrite the native
+        // language from settings. The automatic direction picks it up on the next translation.
         if (_sourceText is not null)
         {
             _ = RetranslateAsync(code);

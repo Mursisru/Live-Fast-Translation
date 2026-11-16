@@ -49,6 +49,8 @@ $script:WordError = U @(0x041E,0x0448,0x0438,0x0431,0x043A,0x0430)             #
 $script:SettingsTitle = 'Live-Fast Translation ' + [char]0x2014 + ' ' + (U @(
     0x041D,0x0430,0x0441,0x0442,0x0440,0x043E,0x0439,0x043A,0x0438))            # Nastroyki
 $script:SearchTheme = U @(0x0442,0x0435,0x043C,0x0430)                          # tema
+$script:NativeLanguageLabel = U @(
+    0x0420,0x043E,0x0434,0x043D,0x043E,0x0439,0x0020,0x044F,0x0437,0x044B,0x043A) # Rodnoy yazyk
 
 function Add-Result {
     param([string]$Name, [string]$Status, [int]$DurationMs, [string]$Detail)
@@ -306,6 +308,14 @@ try {
             Select-Nav -Section $section
             $anchor = Wait-ForElement -AutomationId $sections[$section] -TimeoutMs 6000
             Assert-True ($null -ne $anchor) "Section $section did not render its anchor control."
+            if ($section -eq 'Provider') {
+                $language = Wait-ForElement -AutomationId 'TargetLanguageCombo' -TimeoutMs 4000
+                Assert-True ([string]$language.Current.Name -eq $script:NativeLanguageLabel) 'Target language combo must be labelled as the native language.'
+            }
+            if ($section -eq 'Appearance') {
+                $autoShow = Wait-ForElement -AutomationId 'AutoShowOverlayCheckBox' -TimeoutMs 4000
+                Assert-True ($null -ne $autoShow) 'Auto show overlay checkbox is missing.'
+            }
             Save-Shot -Name ("02_nav_" + $section.ToLowerInvariant())
         }
     }

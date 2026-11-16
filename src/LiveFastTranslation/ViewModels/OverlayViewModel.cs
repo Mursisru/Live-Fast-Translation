@@ -304,8 +304,39 @@ public sealed class OverlayViewModel : ObservableObject
         DirectionText = target is null
             ? "Перевод"
             : $"Перевод на {target.NativeName}";
+        SelectLanguageSilently(targetLanguageCode);
 
         RaiseStateProperties();
+    }
+
+    /// <summary>
+    /// Updates the dropdown without raising <see cref="TargetLanguageChanged"/>: the automatic
+    /// direction must not look like a manual choice and must not be persisted as the native language.
+    /// </summary>
+    public void SelectLanguageSilently(string targetLanguageCode)
+    {
+        if (string.IsNullOrWhiteSpace(targetLanguageCode))
+        {
+            return;
+        }
+
+        var choice = _languages.FirstOrDefault(
+            item => item.Language.Code.Equals(targetLanguageCode, StringComparison.OrdinalIgnoreCase));
+        if (choice is null || ReferenceEquals(choice, _selectedLanguage))
+        {
+            return;
+        }
+
+        var previous = _suppressNotifications;
+        _suppressNotifications = true;
+        try
+        {
+            SelectedLanguage = choice;
+        }
+        finally
+        {
+            _suppressNotifications = previous;
+        }
     }
 
     public void SetSourcePreview(string sourceText)

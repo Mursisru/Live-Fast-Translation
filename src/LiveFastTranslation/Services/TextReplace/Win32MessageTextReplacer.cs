@@ -26,6 +26,11 @@ public sealed class Win32MessageTextReplacer : ITextReplacer
             return Task.FromResult(ReplaceOutcome.Fail(Name, "Поле защищено, замена текста запрещена."));
         }
 
+        if (Win32Focus.IsReadOnly(focusedControl))
+        {
+            return Task.FromResult(ReplaceOutcome.Fail(Name, "Поле доступно только для чтения."));
+        }
+
         try
         {
             if (!Win32Focus.TryReplaceSelection(focusedControl, replacement))

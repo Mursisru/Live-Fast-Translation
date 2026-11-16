@@ -66,6 +66,17 @@ internal static class Win32Focus
         return (style & NativeMethods.ES_PASSWORD) != 0;
     }
 
+    public static bool IsReadOnly(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        var style = NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWL_STYLE).ToInt64();
+        return (style & NativeMethods.ES_READONLY) != 0;
+    }
+
     public static (int Start, int End) GetSelection(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero)
@@ -131,7 +142,7 @@ internal static class Win32Focus
 
     public static bool TryReplaceSelection(IntPtr hWnd, string replacement)
     {
-        if (hWnd == IntPtr.Zero || !IsEditLike(hWnd) || IsPasswordField(hWnd))
+        if (hWnd == IntPtr.Zero || !IsEditLike(hWnd) || IsPasswordField(hWnd) || IsReadOnly(hWnd))
         {
             return false;
         }

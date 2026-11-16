@@ -190,9 +190,9 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Orientation="Horizontal" Margin="14,0,0,0" VerticalAlignment="Center">
-                    <Image Source="pack://application:,,,/Assets/app.ico"
-                           Width="16"
-                           Height="16"
+                    <Image Source="pack://application:,,,/Assets/app-icon.png"
+                           Width="18"
+                           Height="18"
                            RenderOptions.BitmapScalingMode="HighQuality" />
                     <TextBlock Text="Настройки"
                                AutomationProperties.AutomationId="SettingsTitleText"
@@ -353,7 +353,17 @@
                                                   Style="{StaticResource SectionIcon}"
                                                   Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}"
                                                   HorizontalAlignment="Left"
-                                                  VerticalAlignment="Center" />
+                                                  VerticalAlignment="Center"
+                                                  Visibility="{Binding IconImage, Converter={StaticResource StringNotEmptyToVisibility}, ConverterParameter=invert}" />
+                                            <Rectangle Width="16" Height="16"
+                                                       HorizontalAlignment="Left"
+                                                       VerticalAlignment="Center"
+                                                       Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}"
+                                                       Visibility="{Binding IconImage, Converter={StaticResource StringNotEmptyToVisibility}}">
+                                                <Rectangle.OpacityMask>
+                                                    <ImageBrush ImageSource="{Binding IconImage}" Stretch="Uniform" />
+                                                </Rectangle.OpacityMask>
+                                            </Rectangle>
                                             <TextBlock Grid.Column="1"
                                                        Text="{Binding Title}"
                                                        FontSize="12.5"
@@ -550,18 +560,18 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             <StackPanel>
-                                                <TextBlock Text="Язык перевода" Style="{StaticResource RowLabel}" Margin="0" />
+                                                <TextBlock Text="Родной язык" Style="{StaticResource RowLabel}" Margin="0" />
                                                 <TextBlock Text="{Binding AvailableLanguagesHint}" Style="{StaticResource HintText}" Margin="0,3,0,0" />
                                             </StackPanel>
                                             <StackPanel Grid.Column="1">
                                                 <ComboBox AutomationProperties.AutomationId="TargetLanguageCombo"
-                                                          AutomationProperties.Name="Язык перевода"
+                                                          AutomationProperties.Name="Родной язык"
                                                           ItemsSource="{Binding Languages}"
                                                           SelectedItem="{Binding TargetLanguage, Mode=TwoWay}"
                                                           ItemTemplate="{StaticResource LanguageItemTemplate}"
                                                           ItemContainerStyle="{StaticResource LanguageComboItem}" />
                                                 <TextBlock Style="{StaticResource HintText}" Margin="0,5,0,0"
-                                                           Text="Доступны только языки, установленные из папки argos-packages." />
+                                                           Text="Язык перевода выбирается автоматически: на родной язык и с родного на английский." />
                                             </StackPanel>
                                         </Grid>
                                     </Border>
@@ -1333,6 +1343,18 @@
                                                 <TextBlock Text="Минималистичный режим строки" FontSize="12.5" />
                                                 <TextBlock Text="Скрыть язык, AI, настройки и закрытие — останется только перевод."
                                                            Style="{StaticResource HintText}" Margin="0,2,0,0" />
+                                            </StackPanel>
+                                        </CheckBox>
+                                    </Border>
+                                    <Border Style="{StaticResource RowDivider}" />
+
+                                    <Border Style="{StaticResource SettingRow}">
+                                        <CheckBox AutomationProperties.AutomationId="AutoShowOverlayCheckBox"
+                                                  IsChecked="{Binding AutoShowOverlay, Mode=TwoWay}">
+                                            <StackPanel>
+                                                <TextBlock Text="Авто появление строки перевода" FontSize="12.5" />
+                                                <TextBlock Text="Строка появляется сама при выделении текста — горячая клавиша не нужна."
+                                                           Style="{StaticResource HintText}" Margin="0,2,0,0" TextWrapping="Wrap" />
                                             </StackPanel>
                                         </CheckBox>
                                     </Border>

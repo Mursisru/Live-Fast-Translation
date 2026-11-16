@@ -6,7 +6,8 @@
     opens a deterministic sample window with selected text, presses the global
     translate hotkey and validates the overlay: full (untrimmed) translation,
     anchoring above the input field, no dragging, warm Argos speed, AI toggle,
-    minimal mode, close button and settings isolation.
+    minimal mode with a short translation, auto show on selection, refused
+    replacement in a read-only field, close button and settings isolation.
 
     Run:
       powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts/test_overlay.ps1
@@ -28,10 +29,12 @@ $script:Screenshots = New-Object System.Collections.Generic.List[string]
 $script:Aborted = $false
 $script:AppProcess = $null
 $script:SampleProcess = $null
+$script:ShortSampleProcess = $null
 $script:ProfileDir = $null
 $script:ArtifactsDir = $null
 $script:OverlayWindow = $null
 $script:SettingsWindow = $null
+$script:AutoShownText = ''
 
 $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if (-not $ExePath) {
@@ -40,6 +43,8 @@ if (-not $ExePath) {
 $script:ExePath = $ExePath
 $script:WindowTitle = 'Live-Fast Translation'
 $script:SampleTitle = 'LFT Overlay Sample'
+$script:SampleTitleShort = 'LFT Overlay Sample Short'
+$script:SampleTitleReadOnly = 'LFT Overlay Sample ReadOnly'
 $script:SettingsTitle = 'Live-Fast Translation ' + [char]0x2014 + ' ' + (-join ([char[]]@(
     0x041D, 0x0430, 0x0441, 0x0442, 0x0440, 0x043E, 0x0439, 0x043A, 0x0438)))
 
@@ -132,10 +137,14 @@ using System.Windows.Forms;
 public static class Program
 {
     [STAThread]
-    public static void Main()
+    public static void Main(string[] args)
     {
+        bool readOnly = args.Length > 0 && args[0] == "--read-only";
+        bool shortText = args.Length > 0 && args[0] == "--short";
         var form = new Form();
-        form.Text = "LFT Overlay Sample";
+        form.Text = readOnly ? "LFT Overlay Sample ReadOnly"
+            : shortText ? "LFT Overlay Sample Short"
+            : "LFT Overlay Sample";
         form.Width = 660;
         form.Height = 240;
         form.StartPosition = FormStartPosition.CenterScreen;
@@ -144,12 +153,17 @@ public static class Program
         box.ScrollBars = ScrollBars.Vertical;
         box.Dock = DockStyle.Fill;
         box.Font = new Font("Segoe UI", 14f);
-        box.Text = "The quick brown fox jumps over the lazy dog. A warm local translation " +
-            "engine should answer almost instantly after the first request. This deliberately " +
-            "long sample verifies that the overlay grows to fit every sentence instead of " +
-            "trimming the text with an ellipsis. The capsule must stay anchored above the " +
-            "input field and never be draggable, so the user always knows where the " +
-            "translation belongs. Pack my box with five dozen liquor jugs.";
+        box.ReadOnly = readOnly;
+        box.Text = readOnly
+            ? "This read-only field must refuse the translation replacement attempt."
+            : shortText
+                ? "Translator"
+                : "The quick brown fox jumps over the lazy dog. A warm local translation " +
+                    "engine should answer almost instantly after the first request. This deliberately " +
+                    "long sample verifies that the overlay grows to fit every sentence instead of " +
+                    "trimming the text with an ellipsis. The capsule must stay anchored above the " +
+                    "input field and never be draggable, so the user always knows where the " +
+                    "translation belongs. Pack my box with five dozen liquor jugs.";
         form.Controls.Add(box);
         form.Shown += delegate { box.Focus(); box.SelectAll(); };
         Application.Run(form);
@@ -189,7 +203,10 @@ function Get-OverlayRect {
 }
 
 function Get-SampleField {
-    $sampleWindow = Wait-Window -ProcessId $script:SampleProcess.Id -Title $script:SampleTitle -TimeoutMs 5000
+    param($Window = $null)
+    if ($null -eq $Window) {
+        $Window = Wait-Window -ProcessId $script:SampleProcess.Id -Title $script:SampleTitle -TimeoutMs 5000
+    }
     # A multiline WinForms TextBox is exposed as Document, a single-line one as Edit.
     $fieldCondition = [System.Windows.Automation.OrCondition]::new(
         [System.Windows.Automation.PropertyCondition]::new(
@@ -199,7 +216,7 @@ function Get-SampleField {
             [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
             [System.Windows.Automation.ControlType]::Document))
     return Wait-Until -TimeoutMs 5000 -IntervalMs 150 -Condition {
-        $sampleWindow.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $fieldCondition)
+        $Window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $fieldCondition)
     } -TimeoutMessage 'The sample input field was not found.'
 }
 
@@ -283,9 +300,10 @@ try {
   "provider": { "aiProvider": "OpenAi" },
   "targetLanguage": "ru",
   "hotkeys": { "translateSelection": "Ctrl+Alt+T", "toggleAiMode": "Ctrl+Alt+A", "openSettings": "Ctrl+Alt+S" },
+  "replacement": { "strategy": "Win32Message" },
   "aiMode": { "enabled": false },
   "appearance": { "theme": "light-sky", "opacity": 0.96, "fontFamily": "Segoe UI", "fontSize": 13.5, "minimalOverlay": false },
-  "general": { "autoStart": false, "startMinimized": false, "saveHistory": false, "historyLimit": 50, "allowClipboardCapture": true, "showTrayNotifications": false }
+  "general": { "autoStart": false, "startMinimized": false, "saveHistory": false, "historyLimit": 50, "allowClipboardCapture": true, "showTrayNotifications": false, "autoShowOverlay": false }
 }
 '@
         [System.IO.File]::WriteAllText(
@@ -397,6 +415,9 @@ try {
         # model), so this checks that the persistent process avoids a full Python restart.
         Assert-True ($total.ElapsedMilliseconds -lt 10000) 'The warm Argos process must answer in under ten seconds.'
 
+        $settingsAfterGerman = Read-SettingsJson
+        Assert-True ($settingsAfterGerman.targetLanguage -eq 'ru') 'Choosing a language in the overlay must not overwrite the native language.'
+
         $back = [System.Diagnostics.Stopwatch]::StartNew()
         Select-OverlayLanguage -Code 'RU'
         $russian = Wait-Translation -Previous $germanText -TimeoutMs 9000
@@ -407,7 +428,7 @@ try {
         Assert-True ($back.ElapsedMilliseconds -lt 10000) 'Repeated Argos translations must stay fast.'
 
         $settings = Read-SettingsJson
-        Assert-True ($settings.targetLanguage -eq 'ru') 'The overlay language selection must persist back to ru.'
+        Assert-True ($settings.targetLanguage -eq 'ru') 'The native language must stay ru after overlay retranslations.'
         Save-Shot -Name '05_overlay_retranslated'
     }
 
@@ -460,6 +481,7 @@ try {
         Write-Host "       theme cards: $($items.Count)" -ForegroundColor DarkGray
         Assert-True ($items.Count -eq 64) 'The theme gallery must expose all 64 themes.'
         Assert-True ($null -ne (Find-Settings -AutomationId 'MinimalOverlayCheckBox' -TimeoutMs 4000)) 'Minimal overlay checkbox is missing.'
+        Assert-True ($null -ne (Find-Settings -AutomationId 'AutoShowOverlayCheckBox' -TimeoutMs 4000)) 'Auto show overlay checkbox is missing.'
         Save-Shot -Name '08_theme_gallery' -Element $script:SettingsWindow
     }
 
@@ -490,7 +512,25 @@ try {
         Assert-True ($minimalTextRect.Bottom -le ($rect.Bottom - 4)) 'Minimal mode must not clip the translation.'
         Save-Shot -Name '09_overlay_minimal'
 
-        Invoke-PointRightClick -Element $textElement
+        # A short translation must shrink the capsule instead of leaving an empty stretch.
+        $script:ShortSampleProcess = Start-Process -FilePath $script:SampleExePath -ArgumentList '--short' -PassThru
+        $shortWindow = Wait-Window -ProcessId $script:ShortSampleProcess.Id -Title $script:SampleTitleShort -Exact -TimeoutMs 15000
+        Start-Sleep -Milliseconds 600
+        Invoke-TranslateHotkey -Window $shortWindow
+        $shortElement = Wait-Translation -Previous $minimalText -TimeoutMs 20000
+        $shortText = [string]$shortElement.Current.Name
+        Assert-True (-not [string]::IsNullOrWhiteSpace($shortText)) 'A short translation must not be empty.'
+        $shortCapsuleWidth = Wait-Until -TimeoutMs 5000 -IntervalMs 150 -Condition {
+            $width = (Get-OverlayRect).Width - 20
+            if ($width -lt 180) { return $width }
+            return $null
+        } -TimeoutMessage 'Minimal mode must shrink the capsule to fit a short translation.'
+        Write-Host ("       short capsule: {0:0} px, text: '{1}'" -f $shortCapsuleWidth, $shortText) -ForegroundColor DarkGray
+        Save-Shot -Name '09b_overlay_minimal_short'
+        Stop-Process -Id $script:ShortSampleProcess.Id -Force -ErrorAction SilentlyContinue
+        $script:ShortSampleProcess = $null
+
+        Invoke-PointRightClick -Element $shortElement
         Wait-Until -TimeoutMs 8000 -IntervalMs 200 -Condition {
             if ($null -eq (Find-Now -AutomationId 'OverlayTranslationText')) { $true } else { $false }
         } -TimeoutMessage 'Right click did not hide the minimal overlay.' | Out-Null
@@ -507,6 +547,75 @@ try {
         Save-Shot -Name '10_minimal_disabled' -Element ([System.Windows.Automation.AutomationElement]::RootElement)
     }
 
+    Invoke-Step -Name 'Auto show translates a selection without a hotkey' {
+        Open-SettingsFromHotkey
+        Select-SettingsSection -Section 'Appearance'
+        $autoShow = Find-Settings -AutomationId 'AutoShowOverlayCheckBox' -TimeoutMs 5000
+        Set-Toggle -Element $autoShow -State 'On'
+        Start-Sleep -Milliseconds 250
+        Save-Settings
+
+        $settings = Read-SettingsJson
+        Assert-True ($settings.general.autoShowOverlay -eq $true) 'Auto show overlay flag must be saved.'
+
+        $sampleWindow = Wait-Window -ProcessId $script:SampleProcess.Id -Title $script:SampleTitle -TimeoutMs 5000
+        Set-WindowForeground $sampleWindow
+        Send-VirtualKeys -VirtualKeys @(0x11, 0x41)
+        $autoElement = Wait-Translation -TimeoutMs 30000
+        $script:AutoShownText = [string]$autoElement.Current.Name
+        Assert-True (-not [string]::IsNullOrWhiteSpace($script:AutoShownText)) 'Auto show must translate the selection without a hotkey.'
+        Assert-True ($null -ne (Find-Now -AutomationId 'OverlayTranslationText')) 'Auto show must make the overlay visible.'
+        Save-Shot -Name '11_overlay_auto_shown'
+
+        Open-SettingsFromHotkey
+        Select-SettingsSection -Section 'Appearance'
+        $autoShowOff = Find-Settings -AutomationId 'AutoShowOverlayCheckBox' -TimeoutMs 5000
+        Set-Toggle -Element $autoShowOff -State 'Off'
+        Start-Sleep -Milliseconds 250
+        Save-Settings
+
+        $settingsOff = Read-SettingsJson
+        Assert-True ($settingsOff.general.autoShowOverlay -eq $false) 'Auto show overlay flag must be switched off again.'
+    }
+
+    Invoke-Step -Name 'Read-only field is not replaced and says so' {
+        $readOnlyProcess = Start-Process -FilePath $script:SampleExePath -ArgumentList '--read-only' -PassThru
+        try {
+            $readOnlyWindow = Wait-Window -ProcessId $readOnlyProcess.Id -Title $script:SampleTitleReadOnly -Exact -TimeoutMs 15000
+            Start-Sleep -Milliseconds 600
+            Set-WindowForeground $readOnlyWindow
+
+            Invoke-TranslateHotkey -Window $readOnlyWindow
+            $script:OverlayWindow = Wait-Window -ProcessId $script:AppProcess.Id -Title $script:WindowTitle -Exact -TimeoutMs 15000
+            $translated = Wait-Translation -Previous $script:AutoShownText -TimeoutMs 30000
+            Assert-True (-not [string]::IsNullOrWhiteSpace([string]$translated.Current.Name)) 'The read-only sample must translate.'
+
+            $readOnlyField = Get-SampleField -Window $readOnlyWindow
+            $before = (Get-Text -Element $readOnlyField).Trim()
+            $notReplaced = -join ([char[]]@(
+                0x041D, 0x0435, 0x0020, 0x0437, 0x0430, 0x043C, 0x0435, 0x043D, 0x0435, 0x043D, 0x043E))
+
+            Invoke-PointClick -Element $translated
+            $errorElement = Wait-Until -TimeoutMs 12000 -IntervalMs 200 -Condition {
+                $element = Find-Now -AutomationId 'OverlayErrorText'
+                if ($null -eq $element) { return $null }
+                $name = [string]$element.Current.Name
+                if ([string]::IsNullOrWhiteSpace($name)) { return $null }
+                return $element
+            } -TimeoutMessage 'The overlay did not report the refused replacement.'
+            $errorText = [string]$errorElement.Current.Name
+            Write-Host "       replacement error: $errorText" -ForegroundColor DarkGray
+            Assert-True ($errorText.StartsWith($notReplaced)) 'A refused replacement must start with the not-replaced label.'
+            Assert-True (((Get-Text -Element $readOnlyField).Trim()) -eq $before) 'A read-only field must keep its text after a refused replacement.'
+            Save-Shot -Name '12_replacement_refused'
+        }
+        finally {
+            if ($readOnlyProcess -and -not $readOnlyProcess.HasExited) {
+                Stop-Process -Id $readOnlyProcess.Id -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
     Invoke-Step -Name 'Isolated profile did not touch the real user settings' {
         $settings = Read-SettingsJson
         Assert-True ($settings.targetLanguage -eq 'ru') 'Seeded target language must stay ru.'
@@ -517,6 +626,9 @@ finally {
     Invoke-Step -Name 'Cleanup processes and temporary profile' -Always {
         if ($script:SampleProcess -and -not $script:SampleProcess.HasExited) {
             Stop-Process -Id $script:SampleProcess.Id -Force -ErrorAction SilentlyContinue
+        }
+        if ($script:ShortSampleProcess -and -not $script:ShortSampleProcess.HasExited) {
+            Stop-Process -Id $script:ShortSampleProcess.Id -Force -ErrorAction SilentlyContinue
         }
         Stop-AppHard -ProcessId $(if ($script:AppProcess) { $script:AppProcess.Id } else { 0 }) -ExePath $script:ExePath
 
