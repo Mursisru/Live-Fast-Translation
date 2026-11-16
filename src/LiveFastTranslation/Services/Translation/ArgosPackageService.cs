@@ -54,6 +54,11 @@ public sealed class ArgosPackageService
         environment["ARGOS_PACKAGES_DIR"] = PackagesDirectory;
         // Set common related dirs under the same root for portability where applicable.
         var root = Path.GetDirectoryName(PackagesDirectory);
+        if (Path.GetFileName(root)?.Equals("argos-translate", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            root = Path.GetDirectoryName(root);
+        }
+
         if (!string.IsNullOrWhiteSpace(root))
         {
             environment["ARGOS_TRANSLATE_PACKAGE_DIR"] ??= PackagesDirectory;
@@ -65,6 +70,28 @@ public sealed class ArgosPackageService
     {
         var candidates = new List<string>();
         var baseDir = AppContext.BaseDirectory;
+
+        // Explicit override wins when provided by the user or a launcher.
+        var configured = Environment.GetEnvironmentVariable("ARGOS_PACKAGES_DIR");
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            candidates.Add(configured);
+        }
+
+        // Standard Argos Translate user data locations. Packages may be moved out of the
+        // repository, so an empty project folder must not hide an installed set of models.
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(userProfile))
+        {
+            candidates.Add(Path.Combine(userProfile, ".local", "share", "argos-translate", "packages"));
+            candidates.Add(Path.Combine(userProfile, ".argos-translate", "packages"));
+        }
+
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrWhiteSpace(localAppData))
+        {
+            candidates.Add(Path.Combine(localAppData, "argos-translate", "packages"));
+        }
 
         // Typical runtime locations (copied to output/published).
         candidates.Add(Path.Combine(baseDir, PackagesDirectoryName));
@@ -105,9 +132,19 @@ public sealed class ArgosPackageService
                 continue;
             }
 
-            if (Directory.Exists(full))
+            if (Directory.Exists(full) && ContainsInstalledPackage(full))
             {
                 return full;
+            }
+        }
+
+        // A folder without models is still a legitimate writable destination; prefer the
+        // first existing one only after no usable package set was found.
+        foreach (var candidate in candidates)
+        {
+            if (!string.IsNullOrWhiteSpace(candidate) && Directory.Exists(candidate))
+            {
+                return candidate;
             }
         }
 
@@ -120,6 +157,30 @@ public sealed class ArgosPackageService
         {
             return null;
         }
+    }
+
+    private static bool ContainsInstalledPackage(string directory)
+    {
+        try
+        {
+            if (File.Exists(Path.Combine(directory, "metadata.json")))
+            {
+                return true;
+            }
+
+            foreach (var subDirectory in Directory.EnumerateDirectories(directory))
+            {
+                if (File.Exists(Path.Combine(subDirectory, "metadata.json")))
+                {
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return false;
     }
 
     public static IReadOnlyList<(string From, string To)> DetectInstalledPairs(string? packagesDirectory)
@@ -137,6 +198,12 @@ public sealed class ArgosPackageService
                 var name = Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 var parts = name.Split('_', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 if (parts.Length != 2)
+                {
+                    continue;
+                }
+
+                // Ignore leftover empty folders copied from an old build layout.
+                if (!File.Exists(Path.Combine(dir, "metadata.json")))
                 {
                     continue;
                 }

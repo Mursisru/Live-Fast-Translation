@@ -20,6 +20,14 @@ public sealed class SendKeysTextReplacer : ITextReplacer
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // An empty replacement is used by animated insertion to clear the selection.
+        // Typing an empty string does nothing: the first typed character will replace
+        // the still-active selection.
+        if (string.IsNullOrEmpty(replacement))
+        {
+            return ReplaceOutcome.Ok(Name);
+        }
+
         try
         {
             if (replacement.All(character => character < 128 && (character >= 32 || character is '\r' or '\n' or '\t')))
@@ -57,8 +65,7 @@ public sealed class SendKeysTextReplacer : ITextReplacer
 
     internal static string EscapeForSendKeys(string text)
     {
-        var builder = new StringBuilder(text.Length + 16);
-        foreach (var character in text)
+        var builder = new StringBuilder(text.Length + 16);        foreach (var character in text)
         {
             switch (character)
             {

@@ -52,7 +52,11 @@ internal static class Win32Focus
         return className.StartsWith("Edit", StringComparison.OrdinalIgnoreCase)
                || className.StartsWith("RichEdit", StringComparison.OrdinalIgnoreCase)
                || className.StartsWith("TEdit", StringComparison.OrdinalIgnoreCase)
-               || className.StartsWith("TFloatSpinEdit", StringComparison.OrdinalIgnoreCase);
+               || className.StartsWith("TFloatSpinEdit", StringComparison.OrdinalIgnoreCase)
+               // WinForms wraps native edit controls in classes like
+               // WindowsForms10.EDIT.app.0.34f5582_r6_ad1.
+               || className.StartsWith("WindowsForms10.EDIT", StringComparison.OrdinalIgnoreCase)
+               || className.IndexOf(".EDIT.", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     public static bool IsPasswordField(IntPtr hWnd)

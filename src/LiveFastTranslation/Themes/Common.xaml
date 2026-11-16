@@ -521,13 +521,18 @@
         <Setter Property="FontSize" Value="12.5" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="MinHeight" Value="24" />
+        <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisualStyle}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type CheckBox}">
-                    <DockPanel Background="Transparent" LastChildFill="True">
+                    <Grid Background="Transparent">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
                         <Border x:Name="Box"
                                 Width="16"
                                 Height="16"
@@ -535,11 +540,14 @@
                                 BorderThickness="1"
                                 BorderBrush="{DynamicResource BorderStrongBrush}"
                                 Background="{DynamicResource InputBackgroundBrush}"
+                                HorizontalAlignment="Left"
                                 VerticalAlignment="Center"
-                                DockPanel.Dock="Left"
                                 SnapsToDevicePixels="True">
                             <Path x:Name="CheckMark"
-                                  Data="M 3 8 L 6.5 11.5 L 13 4.5"
+                                  Data="M 1 4.5 L 4.3 7.8 L 9 1.5"
+                                  Width="10"
+                                  Height="8"
+                                  Stretch="Uniform"
                                   Stroke="{DynamicResource OnAccentBrush}"
                                   StrokeThickness="1.8"
                                   StrokeStartLineCap="Round"
@@ -549,10 +557,11 @@
                                   VerticalAlignment="Center" />
                         </Border>
                         <ContentPresenter x:Name="ContentSite"
+                                          Grid.Column="1"
                                           Margin="8,0,0,0"
                                           VerticalAlignment="Center"
                                           RecognizesAccessKey="True" />
-                    </DockPanel>
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Box" Property="Background" Value="{DynamicResource AccentBrush}" />

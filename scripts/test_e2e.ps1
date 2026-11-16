@@ -312,6 +312,10 @@ try {
                 $language = Wait-ForElement -AutomationId 'TargetLanguageCombo' -TimeoutMs 4000
                 Assert-True ([string]$language.Current.Name -eq $script:NativeLanguageLabel) 'Target language combo must be labelled as the native language.'
             }
+            if ($section -eq 'Replacement') {
+                $animate = Wait-ForElement -AutomationId 'AnimateInsertionCheckBox' -TimeoutMs 4000
+                Assert-True ((Get-ToggleState $animate) -eq 'On') 'Animated insertion must be enabled by default.'
+            }
             if ($section -eq 'Appearance') {
                 $autoShow = Wait-ForElement -AutomationId 'AutoShowOverlayCheckBox' -TimeoutMs 4000
                 Assert-True ($null -ne $autoShow) 'Auto show overlay checkbox is missing.'

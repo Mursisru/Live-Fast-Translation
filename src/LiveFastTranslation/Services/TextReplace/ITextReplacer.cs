@@ -38,6 +38,8 @@ public sealed class ReplaceOptions
 
     public bool MoveCaretAfterReplace { get; init; } = true;
 
+    public bool AnimateInsertion { get; init; } = true;
+
     public static ReplaceOptions FromSettings(ReplacementSettings settings)
     {
         return new ReplaceOptions
@@ -46,7 +48,8 @@ public sealed class ReplaceOptions
             CursorPlacement = settings.CursorPlacement,
             RestoreClipboardAfterPaste = settings.RestoreClipboardAfterPaste,
             ActivateTargetWindow = settings.ActivateTargetWindow,
-            MoveCaretAfterReplace = settings.MoveCaretAfterReplace
+            MoveCaretAfterReplace = settings.MoveCaretAfterReplace,
+            AnimateInsertion = settings.AnimateInsertion
         };
     }
 }

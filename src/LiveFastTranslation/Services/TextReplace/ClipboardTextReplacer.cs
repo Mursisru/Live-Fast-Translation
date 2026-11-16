@@ -18,6 +18,13 @@ public sealed class ClipboardTextReplacer : ITextReplacer
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Animated insertion clears the selection first; pasting an empty string is a no-op
+        // because typing the first character replaces the active selection anyway.
+        if (string.IsNullOrEmpty(replacement))
+        {
+            return ReplaceOutcome.Ok(Name);
+        }
+
         var snapshot = ClipboardSnapshot.Capture();
         try
         {

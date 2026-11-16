@@ -15,7 +15,6 @@ public sealed class SelectionMonitor : IDisposable
     private const int WM_KEYDOWN = 0x0100;
     private const int WM_SYSKEYDOWN = 0x0104;
     private const int VK_CONTROL = 0x11;
-    private const int VK_SHIFT = 0x10;
     private const int VK_LEFT = 0x25;
     private const int VK_UP = 0x26;
     private const int VK_RIGHT = 0x27;
@@ -24,6 +23,9 @@ public sealed class SelectionMonitor : IDisposable
     private const int VK_END = 0x23;
     private const int VK_PRIOR = 0x21;
     private const int VK_NEXT = 0x22;
+    private const int VK_BACK = 0x08;
+    private const int VK_DELETE = 0x2E;
+    private const int VK_X = 0x58;
     private const int VK_A = 0x41;
 
     private readonly DispatcherTimer _settleTimer;
@@ -181,9 +183,10 @@ public sealed class SelectionMonitor : IDisposable
                 var info = Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);
                 var key = (int)info.vkCode;
                 var control = (NativeMethods.GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-                var shift = (NativeMethods.GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 
-                if ((control && key == VK_A) || (shift && IsSelectionNavigationKey(key)))
+                if ((control && (key == VK_A || key == VK_X))
+                    || IsSelectionNavigationKey(key)
+                    || key is VK_BACK or VK_DELETE)
                 {
                     Schedule();
                 }

@@ -157,8 +157,8 @@ public sealed class OverlayController : IDisposable
 
     /// <summary>
     /// Silently reads the current selection and translates it when a non-empty selection appears.
-    /// Used by the optional auto-show mode; an empty selection (a plain click or caret move) never
-    /// shows the overlay and never interrupts a translation that is already on screen.
+    /// Used by the optional auto-show mode; an empty selection (a plain click, erased text or a
+    /// collapsed caret) hides a visible capsule. The clipboard is never used.
     /// </summary>
     public async Task AutoTranslateSelectionAsync()
     {
@@ -184,8 +184,21 @@ public sealed class OverlayController : IDisposable
                 .CaptureSelectedTextAsync(allowClipboardFallback: false)
                 .ConfigureAwait(true);
 
-            if (_disposed || !capture.HasText)
+            if (_disposed)
             {
+                return;
+            }
+
+            // With auto-show enabled the capsule follows the selection: an empty selection
+            // (a plain click, erased text or a collapsed caret) must hide it instead of
+            // leaving a stale translation on screen.
+            if (!capture.HasText)
+            {
+                if (_window.IsOverlayVisible)
+                {
+                    HideOverlay();
+                }
+
                 return;
             }
 
@@ -257,7 +270,8 @@ public sealed class OverlayController : IDisposable
             _window.ShowOverlay();
         }
 
-        await TranslateCoreAsync(requestId, capture.Text, target, cancellationToken).ConfigureAwait(true);
+        await TranslateCoreAsync(requestId, capture.Text, target, cancellationToken, validateSelection: true, expectedWindow: capture.TargetWindow)
+            .ConfigureAwait(true);
     }
 
     public async Task TranslateAiSentenceAsync(string sentence, IntPtr targetWindow)
@@ -356,7 +370,13 @@ public sealed class OverlayController : IDisposable
         _window.HideOverlay();
     }
 
-    private async Task TranslateCoreAsync(int requestId, string text, string targetLanguage, CancellationToken cancellationToken)
+    private async Task TranslateCoreAsync(
+        int requestId,
+        string text,
+        string targetLanguage,
+        CancellationToken cancellationToken,
+        bool validateSelection = false,
+        IntPtr expectedWindow = default)
     {
         var result = await _translationService
             .TranslateAsync(new TranslationRequest(text, targetLanguage), cancellationToken)
@@ -365,6 +385,25 @@ public sealed class OverlayController : IDisposable
         if (IsStale(requestId, null) || cancellationToken.IsCancellationRequested || !_window.IsOverlayVisible)
         {
             return;
+        }
+
+        // The user may have collapsed or replaced the selection while the provider was
+        // working. Re-read it before showing anything so a detached translation is never
+        // painted over an empty or different selection.
+        if (validateSelection)
+        {
+            var selectionIsValid = await IsSelectionStillValidAsync(text, expectedWindow, cancellationToken)
+                .ConfigureAwait(true);
+            if (IsStale(requestId, null) || cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (!selectionIsValid)
+            {
+                _window.HideOverlay();
+                return;
+            }
         }
 
         ViewModel.SetResult(result);
@@ -379,6 +418,39 @@ public sealed class OverlayController : IDisposable
             TargetLanguage = result.TargetLanguage,
             Provider = result.Provider
         });
+    }
+
+    private async Task<bool> IsSelectionStillValidAsync(string text, IntPtr expectedWindow, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var current = await _captureService
+                .CaptureSelectedTextAsync(_settings.Current.General.AllowClipboardCapture, cancellationToken)
+                .ConfigureAwait(true);
+            if (!current.HasText)
+            {
+                return false;
+            }
+
+            if (!string.Equals(current.Text, text, StringComparison.Ordinal)
+                && !string.Equals(current.Text.Trim(), text.Trim(), StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return expectedWindow == IntPtr.Zero
+                   || current.TargetWindow == IntPtr.Zero
+                   || current.TargetWindow == expectedWindow;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        catch (Exception exception)
+        {
+            AppLogger.Warn($"Не удалось повторно проверить выделение: {exception.Message}");
+            return false;
+        }
     }
 
     private async Task HandleResultActivatedAsync()

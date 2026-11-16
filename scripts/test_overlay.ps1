@@ -30,6 +30,9 @@ $script:Aborted = $false
 $script:AppProcess = $null
 $script:SampleProcess = $null
 $script:ShortSampleProcess = $null
+$script:SecondSampleProcess = $null
+$script:PartialSampleProcess = $null
+$script:CancelSampleProcess = $null
 $script:ProfileDir = $null
 $script:ArtifactsDir = $null
 $script:OverlayWindow = $null
@@ -44,6 +47,9 @@ $script:ExePath = $ExePath
 $script:WindowTitle = 'Live-Fast Translation'
 $script:SampleTitle = 'LFT Overlay Sample'
 $script:SampleTitleShort = 'LFT Overlay Sample Short'
+$script:SampleTitleSecond = 'LFT Overlay Sample Second'
+$script:SampleTitlePartial = 'LFT Overlay Sample Partial'
+$script:SampleTitleCancel = 'LFT Overlay Sample Cancel'
 $script:SampleTitleReadOnly = 'LFT Overlay Sample ReadOnly'
 $script:SettingsTitle = 'Live-Fast Translation ' + [char]0x2014 + ' ' + (-join ([char[]]@(
     0x041D, 0x0430, 0x0441, 0x0442, 0x0440, 0x043E, 0x0439, 0x043A, 0x0438)))
@@ -141,9 +147,15 @@ public static class Program
     {
         bool readOnly = args.Length > 0 && args[0] == "--read-only";
         bool shortText = args.Length > 0 && args[0] == "--short";
+        bool secondText = args.Length > 0 && args[0] == "--second";
+        bool partialText = args.Length > 0 && args[0] == "--partial";
+        bool cancelText = args.Length > 0 && args[0] == "--cancel";
         var form = new Form();
         form.Text = readOnly ? "LFT Overlay Sample ReadOnly"
             : shortText ? "LFT Overlay Sample Short"
+            : secondText ? "LFT Overlay Sample Second"
+            : partialText ? "LFT Overlay Sample Partial"
+            : cancelText ? "LFT Overlay Sample Cancel"
             : "LFT Overlay Sample";
         form.Width = 660;
         form.Height = 240;
@@ -158,12 +170,14 @@ public static class Program
             ? "This read-only field must refuse the translation replacement attempt."
             : shortText
                 ? "Translator"
-                : "The quick brown fox jumps over the lazy dog. A warm local translation " +
-                    "engine should answer almost instantly after the first request. This deliberately " +
-                    "long sample verifies that the overlay grows to fit every sentence instead of " +
-                    "trimming the text with an ellipsis. The capsule must stay anchored above the " +
-                    "input field and never be draggable, so the user always knows where the " +
-                    "translation belongs. Pack my box with five dozen liquor jugs.";
+                : partialText
+                    ? "Line 1. Line 2. Line 3."
+                    : "The quick brown fox jumps over the lazy dog. A warm local translation " +
+                        "engine should answer almost instantly after the first request. This deliberately " +
+                        "long sample verifies that the overlay grows to fit every sentence instead of " +
+                        "trimming the text with an ellipsis. The capsule must stay anchored above the " +
+                        "input field and never be draggable, so the user always knows where the " +
+                        "translation belongs. Pack my box with five dozen liquor jugs.";
         form.Controls.Add(box);
         form.Shown += delegate { box.Focus(); box.SelectAll(); };
         Application.Run(form);
@@ -218,6 +232,21 @@ function Get-SampleField {
     return Wait-Until -TimeoutMs 5000 -IntervalMs 150 -Condition {
         $Window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $fieldCondition)
     } -TimeoutMessage 'The sample input field was not found.'
+}
+
+function Select-SampleSubstring {
+    param(
+        [Parameter(Mandatory)]$Field,
+        [Parameter(Mandatory)][string]$Text
+    )
+    $pattern = $null
+    if (-not $Field.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$pattern)) {
+        throw 'The sample field does not support TextPattern.'
+    }
+    $range = $pattern.DocumentRange.FindText($Text, $false, $false)
+    Assert-True ($null -ne $range) "Sample text '$Text' was not found."
+    $range.Select()
+    Start-Sleep -Milliseconds 120
 }
 
 function Select-OverlayLanguage {
@@ -567,6 +596,13 @@ try {
         Assert-True ($null -ne (Find-Now -AutomationId 'OverlayTranslationText')) 'Auto show must make the overlay visible.'
         Save-Shot -Name '11_overlay_auto_shown'
 
+        # Collapsing the selection with the caret keys must hide the auto-shown capsule.
+        Send-VirtualKeys -VirtualKeys @(0x27)
+        Wait-Until -TimeoutMs 8000 -IntervalMs 200 -Condition {
+            if ($null -eq (Find-Now -AutomationId 'OverlayTranslationText')) { $true } else { $false }
+        } -TimeoutMessage 'An empty selection did not hide the auto-shown overlay.' | Out-Null
+        Save-Shot -Name '11b_overlay_auto_hidden' -Element ([System.Windows.Automation.AutomationElement]::RootElement)
+
         Open-SettingsFromHotkey
         Select-SettingsSection -Section 'Appearance'
         $autoShowOff = Find-Settings -AutomationId 'AutoShowOverlayCheckBox' -TimeoutMs 5000
@@ -576,6 +612,88 @@ try {
 
         $settingsOff = Read-SettingsJson
         Assert-True ($settingsOff.general.autoShowOverlay -eq $false) 'Auto show overlay flag must be switched off again.'
+    }
+
+    Invoke-Step -Name 'Animated insertion leaves only the translation in the field' {
+        $script:SecondSampleProcess = Start-Process -FilePath $script:SampleExePath -ArgumentList '--second' -PassThru
+        try {
+            $secondWindow = Wait-Window -ProcessId $script:SecondSampleProcess.Id -Title $script:SampleTitleSecond -Exact -TimeoutMs 15000
+            Start-Sleep -Milliseconds 600
+            Invoke-TranslateHotkey -Window $secondWindow
+            $translated = Wait-Translation -TimeoutMs 30000
+            $expected = (([string]$translated.Current.Name).Replace([string][char]0x200B, '').Replace("`r", '')).Trim()
+            $field = Get-SampleField -Window $secondWindow
+
+            Invoke-PointClick -Element $translated
+            $actual = Wait-Until -TimeoutMs 20000 -IntervalMs 200 -Condition {
+                $value = ((Get-Text -Element $field).Replace([string][char]0x200B, '').Replace("`r", '')).Trim()
+                if ($value -eq $expected) { return $value }
+                return $null
+            } -TimeoutMessage 'Animated insertion did not leave the full translation in the field.'
+            Assert-True (-not ([string]$actual).Contains([string][char]0x200B)) 'Invisible insertion markers must be removed.'
+            Save-Shot -Name '12_animated_insertion'
+        }
+        finally {
+            if ($script:SecondSampleProcess -and -not $script:SecondSampleProcess.HasExited) {
+                Stop-Process -Id $script:SecondSampleProcess.Id -Force -ErrorAction SilentlyContinue
+            }
+            $script:SecondSampleProcess = $null
+        }
+    }
+
+    Invoke-Step -Name 'Partial selection replaces only the selected text' {
+        $script:PartialSampleProcess = Start-Process -FilePath $script:SampleExePath -ArgumentList '--partial' -PassThru
+        try {
+            $partialWindow = Wait-Window -ProcessId $script:PartialSampleProcess.Id -Title $script:SampleTitlePartial -Exact -TimeoutMs 15000
+            Start-Sleep -Milliseconds 600
+            $field = Get-SampleField -Window $partialWindow
+            Select-SampleSubstring -Field $field -Text 'Line 2.'
+
+            Set-WindowForeground $partialWindow
+            Send-VirtualKeys -VirtualKeys @(0x11, 0x12, 0x54)
+            $translated = Wait-Translation -TimeoutMs 30000
+            $translationText = (([string]$translated.Current.Name).Replace([string][char]0x200B, '').Replace("`r", '')).Trim()
+            $expectedText = 'Line 1. ' + $translationText + ' Line 3.'
+
+            Invoke-PointClick -Element $translated
+            $actual = Wait-Until -TimeoutMs 20000 -IntervalMs 200 -Condition {
+                $value = ((Get-Text -Element $field).Replace([string][char]0x200B, '').Replace("`r", '')).Trim()
+                if ($value -eq $expectedText) { return $value }
+                return $null
+            } -TimeoutMessage 'Only the selected fragment should be replaced.'
+            Assert-True ([string]$actual).StartsWith('Line 1.') 'Text before the selection must stay untouched.'
+            Assert-True ([string]$actual).EndsWith('Line 3.') 'Text after the selection must stay untouched.'
+            Save-Shot -Name '14_partial_selection'
+        }
+        finally {
+            if ($script:PartialSampleProcess -and -not $script:PartialSampleProcess.HasExited) {
+                Stop-Process -Id $script:PartialSampleProcess.Id -Force -ErrorAction SilentlyContinue
+            }
+            $script:PartialSampleProcess = $null
+        }
+    }
+
+    Invoke-Step -Name 'Clearing the selection during translation discards the result' {
+        $script:CancelSampleProcess = Start-Process -FilePath $script:SampleExePath -ArgumentList '--cancel' -PassThru
+        try {
+            $cancelWindow = Wait-Window -ProcessId $script:CancelSampleProcess.Id -Title $script:SampleTitleCancel -Exact -TimeoutMs 15000
+            Start-Sleep -Milliseconds 600
+            Set-WindowForeground $cancelWindow
+            Send-VirtualKeys -VirtualKeys @(0x11, 0x12, 0x54)
+            # Collapse the selection while the provider is still working.
+            Send-VirtualKeys -VirtualKeys @(0x27)
+
+            Start-Sleep -Milliseconds 3000
+            Assert-True ($null -eq (Find-Now -AutomationId 'OverlayTranslationText')) 'A translation without a selection must never appear.'
+            Assert-True ($null -eq (Find-Now -AutomationId 'OverlayErrorText')) 'A cancelled translation must not show an error either.'
+            Save-Shot -Name '15_selection_cleared_during_translation' -Element ([System.Windows.Automation.AutomationElement]::RootElement)
+        }
+        finally {
+            if ($script:CancelSampleProcess -and -not $script:CancelSampleProcess.HasExited) {
+                Stop-Process -Id $script:CancelSampleProcess.Id -Force -ErrorAction SilentlyContinue
+            }
+            $script:CancelSampleProcess = $null
+        }
     }
 
     Invoke-Step -Name 'Read-only field is not replaced and says so' {
@@ -607,7 +725,7 @@ try {
             Write-Host "       replacement error: $errorText" -ForegroundColor DarkGray
             Assert-True ($errorText.StartsWith($notReplaced)) 'A refused replacement must start with the not-replaced label.'
             Assert-True (((Get-Text -Element $readOnlyField).Trim()) -eq $before) 'A read-only field must keep its text after a refused replacement.'
-            Save-Shot -Name '12_replacement_refused'
+            Save-Shot -Name '13_replacement_refused'
         }
         finally {
             if ($readOnlyProcess -and -not $readOnlyProcess.HasExited) {
@@ -629,6 +747,15 @@ finally {
         }
         if ($script:ShortSampleProcess -and -not $script:ShortSampleProcess.HasExited) {
             Stop-Process -Id $script:ShortSampleProcess.Id -Force -ErrorAction SilentlyContinue
+        }
+        if ($script:SecondSampleProcess -and -not $script:SecondSampleProcess.HasExited) {
+            Stop-Process -Id $script:SecondSampleProcess.Id -Force -ErrorAction SilentlyContinue
+        }
+        if ($script:PartialSampleProcess -and -not $script:PartialSampleProcess.HasExited) {
+            Stop-Process -Id $script:PartialSampleProcess.Id -Force -ErrorAction SilentlyContinue
+        }
+        if ($script:CancelSampleProcess -and -not $script:CancelSampleProcess.HasExited) {
+            Stop-Process -Id $script:CancelSampleProcess.Id -Force -ErrorAction SilentlyContinue
         }
         Stop-AppHard -ProcessId $(if ($script:AppProcess) { $script:AppProcess.Id } else { 0 }) -ExePath $script:ExePath
 

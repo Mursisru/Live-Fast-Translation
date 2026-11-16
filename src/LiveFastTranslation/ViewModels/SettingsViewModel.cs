@@ -40,7 +40,6 @@ public enum TestStatusKind
 public sealed record SettingsSectionOption(
     SettingsSection Value,
     string IconPath,
-    string IconImage,
     string Title,
     string Description,
     string Keywords);
@@ -78,42 +77,36 @@ public sealed class SettingsViewModel : ObservableObject
         new SettingsSectionOption(
             SettingsSection.Provider,
             "M 5 12 H 11.5 A 3 3 0 0 1 11.5 6 H 10.5 A 4.5 4.5 0 1 0 5 12 Z",
-            string.Empty,
             "Провайдер",
             "Argos Translate, ИИ-сервис, модель и родной язык",
             "провайдер перевод argos ai openai claude gemini opencode модель api ключ родной язык"),
         new SettingsSectionOption(
             SettingsSection.Replacement,
             "M 3 5.5 H 13 M 10.5 3 L 13 5.5 L 10.5 8 M 13 10.5 H 3 M 5.5 8 L 3 10.5 L 5.5 13",
-            string.Empty,
             "Замена текста",
             "Способ вставки перевода и буфер обмена",
             "замена текст вставка буфер обмена курсор задержка стратегия"),
         new SettingsSectionOption(
             SettingsSection.Hotkeys,
             "M 2 4.5 H 14 V 11.5 H 2 Z M 4.5 7 H 5 M 7 7 H 7.5 M 9.5 7 H 10 M 4.5 9.5 H 11.5",
-            string.Empty,
             "Горячие клавиши",
             "Глобальные сочетания клавиш",
             "горячие клавиши хоткей сочетание клавиатура"),
         new SettingsSectionOption(
             SettingsSection.AiMode,
-            "M 7 2 L 8.4 5.6 L 12 7 L 8.4 8.4 L 7 12 L 5.6 8.4 L 2 7 L 5.6 5.6 Z M 12.5 2 V 4 M 13.5 3 H 11.5",
-            "pack://application:,,,/Assets/icon-ai.png",
+            "M 8 0.8 C 8.8 5.2 10.8 7.2 15.2 8 C 10.8 8.8 8.8 10.8 8 15.2 C 7.2 10.8 5.2 8.8 0.8 8 C 5.2 7.2 7.2 5.2 8 0.8 Z",
             "AI-режим",
             "Перевод предложений во время набора",
             "ai режим задержка предложение буфер набор"),
         new SettingsSectionOption(
             SettingsSection.Appearance,
             "M 8 2 A 6 6 0 1 0 14 8 A 5 5 0 0 1 8 2 Z",
-            string.Empty,
             "Оформление",
             "64 темы, шрифт и прозрачность",
             "тема оформление шрифт прозрачность размер язык флаги анимации минимализм строка оверлей авто появление выделение"),
         new SettingsSectionOption(
             SettingsSection.Advanced,
-            "M 2 5 H 8 M 11 5 H 14 M 2 11 H 5 M 8 11 H 14 M 9.5 3 V 7 M 6.5 9 V 13",
-            "pack://application:,,,/Assets/icon-settings.png",
+            "M 1 5 H 15 M 1 11 H 15 M 4 3.4 A 1.6 1.6 0 1 0 4 6.6 A 1.6 1.6 0 1 0 4 3.4 Z M 10 9.4 A 1.6 1.6 0 1 0 10 12.6 A 1.6 1.6 0 1 0 10 9.4 Z",
             "Дополнительно",
             "Автозапуск, трей, история и файлы",
             "автозапуск трей история журнал папка версия служебные файлы")
@@ -520,6 +513,12 @@ public sealed class SettingsViewModel : ObservableObject
     {
         get => _draft.Replacement.MoveCaretAfterReplace;
         set { if (_draft.Replacement.MoveCaretAfterReplace == value) return; _draft.Replacement.MoveCaretAfterReplace = value; OnPropertyChanged(); }
+    }
+
+    public bool AnimateInsertion
+    {
+        get => _draft.Replacement.AnimateInsertion;
+        set { if (_draft.Replacement.AnimateInsertion == value) return; _draft.Replacement.AnimateInsertion = value; OnPropertyChanged(); }
     }
 
     public bool AllowClipboardCapture

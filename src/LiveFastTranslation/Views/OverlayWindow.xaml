@@ -210,12 +210,11 @@
                                   IsChecked="{Binding IsAiMode, Mode=TwoWay}"
                                   ToolTip="AI-режим: переводить предложения во время набора"
                                   Margin="0,0,2,0">
-                        <Rectangle Width="13" Height="13"
-                                   Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ToggleButton}}}">
-                            <Rectangle.OpacityMask>
-                                <ImageBrush ImageSource="pack://application:,,,/Assets/icon-ai.png" Stretch="Uniform" />
-                            </Rectangle.OpacityMask>
-                        </Rectangle>
+                        <Path Data="M 8 0.8 C 8.8 5.2 10.8 7.2 15.2 8 C 10.8 8.8 8.8 10.8 8 15.2 C 7.2 10.8 5.2 8.8 0.8 8 C 5.2 7.2 7.2 5.2 8 0.8 Z"
+                              Width="13"
+                              Height="13"
+                              Stretch="Uniform"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ToggleButton}}}" />
                     </ToggleButton>
                     <Button AutomationProperties.AutomationId="OverlaySettingsButton"
                             AutomationProperties.Name="Настройки"
@@ -223,12 +222,15 @@
                             Command="{Binding SettingsCommand}"
                             ToolTip="Настройки"
                             Margin="0,0,1,0">
-                        <Rectangle Width="14" Height="14"
-                                   Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}">
-                            <Rectangle.OpacityMask>
-                                <ImageBrush ImageSource="pack://application:,,,/Assets/icon-settings.png" Stretch="Uniform" />
-                            </Rectangle.OpacityMask>
-                        </Rectangle>
+                        <Path Data="M 1 5 H 15 M 1 11 H 15 M 4 3.4 A 1.6 1.6 0 1 0 4 6.6 A 1.6 1.6 0 1 0 4 3.4 Z M 10 9.4 A 1.6 1.6 0 1 0 10 12.6 A 1.6 1.6 0 1 0 10 9.4 Z"
+                              Width="14"
+                              Height="14"
+                              Stretch="Uniform"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                              StrokeThickness="1.1"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round" />
                     </Button>
                     <Button AutomationProperties.AutomationId="OverlayCloseButton"
                             AutomationProperties.Name="Закрыть"

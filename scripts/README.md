@@ -21,7 +21,8 @@ dotnet build LiveFastTranslation.slnx -v q
 | --- | --- | --- |
 | `smoke.ps1` | Быстрый запуск: окно настроек, Ctrl+F, поиск, Esc, все разделы, галерея из 64 тем, maximize. | ~12 с |
 | `test_e2e.ps1` | Полный сценарий настроек: первый запуск, поиск, Argos, OpenCode, хоткеи, живой предпросмотр темы, минималистичный режим, сохранение, второй инстанс, диалог несохранённых изменений. | ~1.5 мин |
-| `test_overlay.ps1` | Оверлей перевода: полный текст без обрезки, привязка над полем ввода, запрет перетаскивания, скорость тёплого Argos, AI-тумблер, минималистичный режим с коротким переводом, авто появление по выделению, отказ замены в read-only поле, закрытие. | ~1.5 мин |
+| `test_overlay.ps1` | Оверлей перевода: полный текст без обрезки, привязка над полем ввода, запрет перетаскивания, скорость тёплого Argos, AI-тумблер, минималистичный режим с коротким переводом, авто появление и скрытие по выделению, отказ замены в read-only поле, побуквенная вставка, закрытие. | ~1.5 мин |
+| `regenerate_icons.ps1` | Пересобирает `app.ico`, `app-icon.png`, `icon-ai.png`, `icon-settings.png` из исходников `Assets\new_assets` без искажения пропорций. | ~5 с |
 | `discover.ps1` | Дамп UIA-дерева и скриншоты разделов — для поиска AutomationId. | ~10 с |
 | `uia-helpers.ps1` | Общие функции; не запускается самостоятельно, подключается через dot-source. | — |
 
@@ -33,6 +34,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts\test_overlay.ps
 powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts\test_e2e.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts\discover.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts\discover.ps1 -Section Appearance
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\regenerate_icons.ps1
 ```
 
 `-STA` обязателен: UI Automation и SendKeys требуют однопоточного апартамента.
@@ -112,6 +114,15 @@ single-instance тоже привязан к профилю, поэтому те
   клавиши: после включения настройки тест отправляет Ctrl+A в сэмпл и ждёт
   оверлей. Монитор выделения использует WinEvent и низкоуровневые хуки
   мыши/клавиатуры, поэтому в тесте важны реальные клавиши через `keybd_event`.
+  Клик по полю без выделения (и Backspace/Delete) скрывает оверлей.
+- Анимация вставки (`replacement.animateInsertion`, по умолчанию включена)
+  печатает перевод по символам через `SendInput`. Перед этим выделенный фрагмент
+  очищается выбранной стратегией замены (Win32 `EM_REPLACESEL`, ValuePattern для
+  всего поля или клавиатура/буфер), поэтому остальной текст не затрагивается.
+  Невидимые символы-заглушки больше не используются.
+  Иконки навигации и оверлея — векторные `Path`, повторяющие исходные PNG-формы
+  без растровых искажений; `regenerate_icons.ps1` пересоздаёт только логотип
+  приложения и `app.ico`.
 - Галерея тем — `ListBox` с `AutomationId` карточек, равным id темы
   (`light-sky`, `dark-paper`, ...). Тесты выбирают тему через
   `SelectionItemPattern`, а не стрелками в комбобоксе.

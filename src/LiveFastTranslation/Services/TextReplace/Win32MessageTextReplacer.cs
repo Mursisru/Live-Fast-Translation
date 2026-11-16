@@ -15,7 +15,7 @@ public sealed class Win32MessageTextReplacer : ITextReplacer
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var focusedControl = Win32Focus.GetFocusedControlHwnd();
+        var focusedControl = ResolveTargetControl(context);
         if (focusedControl == IntPtr.Zero || !Win32Focus.IsEditLike(focusedControl))
         {
             return Task.FromResult(ReplaceOutcome.Fail(Name, "Активный элемент не является стандартным полем ввода."));
@@ -49,5 +49,33 @@ public sealed class Win32MessageTextReplacer : ITextReplacer
         {
             return Task.FromResult(ReplaceOutcome.Fail(Name, $"EM_REPLACESEL: {exception.Message}"));
         }
+    }
+
+    /// <summary>
+    /// Prefers the window captured together with the selection: after clicking the overlay the
+    /// foreground focus may already belong to another control, but the replacement must still
+    /// target the field the user selected the text in.
+    /// </summary>
+    private static IntPtr ResolveTargetControl(ReplaceContext context)
+    {
+        if (context.Element is not null)
+        {
+            try
+            {
+                var nativeHandle = context.Element.Current.NativeWindowHandle;
+                if (nativeHandle != 0)
+                {
+                    return new IntPtr(nativeHandle);
+                }
+            }
+            catch (Exception exception) when (
+                exception is System.Windows.Automation.ElementNotAvailableException
+                    or InvalidOperationException)
+            {
+                // Fall back to the focused control below.
+            }
+        }
+
+        return Win32Focus.GetFocusedControlHwnd();
     }
 }

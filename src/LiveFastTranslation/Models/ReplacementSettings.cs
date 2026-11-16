@@ -13,4 +13,7 @@ public sealed class ReplacementSettings
     public bool ActivateTargetWindow { get; set; } = true;
 
     public bool MoveCaretAfterReplace { get; set; } = true;
+
+    /// <summary>Type the translation into the target control character by character.</summary>
+    public bool AnimateInsertion { get; set; } = true;
 }
