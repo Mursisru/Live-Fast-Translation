@@ -13,6 +13,9 @@ public sealed class TextCaptureResult
 
     public int ProcessId { get; init; }
 
+    /// <summary>Focused input element bounds in physical screen pixels, used to anchor the overlay.</summary>
+    public System.Windows.Rect? AnchorBounds { get; init; }
+
     public CaptureMethod Method { get; init; }
 
     public bool IsSensitive { get; init; }

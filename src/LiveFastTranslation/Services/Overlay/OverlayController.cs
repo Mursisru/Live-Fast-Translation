@@ -84,6 +84,10 @@ public sealed class OverlayController : IDisposable
     {
         ViewModel.ApplySettings(_settings.Current);
         _window.AnimationsEnabled = _settings.Current.Appearance.EnableAnimations;
+        if (_window.IsOverlayVisible)
+        {
+            _window.RefitToContent();
+        }
     }
 
     public async Task TranslateSelectionAsync()
@@ -103,7 +107,7 @@ public sealed class OverlayController : IDisposable
         _isAiSource = false;
 
         ViewModel.BeginLoading(string.Empty, target, aiMode: false);
-        _window.SetContentWidth(EstimateWidth("Перевод…", 300));
+        _window.FitToText("Перевод…");
         _window.ShowOverlay();
 
         try
@@ -119,6 +123,7 @@ public sealed class OverlayController : IDisposable
 
             if (!capture.HasText)
             {
+                _window.SetAnchor(capture.AnchorBounds);
                 ShowError(capture.Error ?? "Не удалось прочитать выделенный текст. Выделите текст в другом приложении и повторите.");
                 return;
             }
@@ -127,7 +132,7 @@ public sealed class OverlayController : IDisposable
             _sourceText = capture.Text;
             _isAiSource = false;
             ViewModel.SetSourcePreview(capture.Text);
-            _window.SetContentWidth(EstimateWidth(capture.Text, 280));
+            _window.SetAnchor(capture.AnchorBounds);
 
             await TranslateCoreAsync(requestId, capture.Text, target, cts.Token).ConfigureAwait(true);
         }
@@ -172,7 +177,8 @@ public sealed class OverlayController : IDisposable
         _isAiSource = true;
 
         ViewModel.BeginLoading(_sourceText, target, aiMode: true);
-        _window.SetContentWidth(EstimateWidth(_sourceText, 320));
+        _window.SetAnchor(TextAnchorLocator.TryGetAnchor(targetWindow));
+        _window.FitToText(_sourceText);
         _window.ShowOverlay();
 
         try
@@ -214,7 +220,7 @@ public sealed class OverlayController : IDisposable
         var requestId = _requestId;
 
         ViewModel.BeginLoading(_sourceText, targetLanguageCode, _isAiSource);
-        _window.SetContentWidth(EstimateWidth(_sourceText, 280));
+        _window.FitToText(_sourceText);
 
         try
         {
@@ -262,7 +268,7 @@ public sealed class OverlayController : IDisposable
         }
 
         ViewModel.SetResult(result);
-        _window.SetContentWidth(EstimateWidth(result.TranslatedText, 280));
+        _window.FitToText(result.TranslatedText);
 
         _historyService.Add(new TranslationHistoryEntry
         {
@@ -381,7 +387,7 @@ public sealed class OverlayController : IDisposable
     private void ShowError(string message)
     {
         ViewModel.SetError(message);
-        _window.SetContentWidth(EstimateWidth(message, 300));
+        _window.FitToText(message);
     }
 
     private CancellationTokenSource BeginRequest()
@@ -409,20 +415,6 @@ public sealed class OverlayController : IDisposable
         }
 
         cts.Dispose();
-    }
-
-    private double EstimateWidth(string text, double minimum)
-    {
-        var settings = _settings.Current;
-        var maxLine = 1;
-        foreach (var line in text.Replace('\r', ' ').Split('\n'))
-        {
-            maxLine = Math.Max(maxLine, line.Length);
-        }
-
-        var glyphWidth = Math.Max(5.6, settings.Appearance.FontSize * 0.52);
-        var desired = 196 + Math.Min(maxLine, 95) * glyphWidth;
-        return Math.Max(minimum, desired);
     }
 
     public void Dispose()

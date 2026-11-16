@@ -1,4 +1,5 @@
 using System.Globalization;
+using Media = System.Windows.Media;
 
 namespace LiveFastTranslation.Models;
 
@@ -39,6 +40,16 @@ public sealed record ThemeDefinition(
 {
     public string GroupName => IsDark ? "Тёмные" : "Светлые";
     public string DisplayName => $"{(IsDark ? "Тёмная" : "Светлая")}: {Name}";
+
+    // Preview brushes for the theme gallery. Frozen and cached, so binding many
+    // cards never allocates brushes while scrolling.
+    public Media.Brush PreviewBackground => ThemeCatalog.CreateBrush(AppBackground);
+    public Media.Brush PreviewPanel => ThemeCatalog.CreateBrush(Surface);
+    public Media.Brush PreviewBorder => ThemeCatalog.CreateBrush(Border);
+    public Media.Brush PreviewText => ThemeCatalog.CreateBrush(TextPrimary);
+    public Media.Brush PreviewMuted => ThemeCatalog.CreateBrush(TextMuted);
+    public Media.Brush PreviewAccent => ThemeCatalog.CreateBrush(Accent);
+    public Media.Brush PreviewOnAccent => ThemeCatalog.CreateBrush(OnAccent);
 }
 
 /// <summary>64 built-in UI themes (32 light, 32 dark) with all brush resources used by the app.</summary>
@@ -49,6 +60,25 @@ public static class ThemeCatalog
     public static IReadOnlyList<ThemeDefinition> All { get; } = Build();
 
     private static readonly Dictionary<string, ThemeDefinition> ById = All.ToDictionary(t => t.Id, StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, Media.Brush> BrushCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly object BrushLock = new();
+
+    /// <summary>Returns a frozen brush for a palette colour; repeated calls reuse the instance.</summary>
+    public static Media.Brush CreateBrush(string color)
+    {
+        lock (BrushLock)
+        {
+            if (BrushCache.TryGetValue(color, out var cached))
+            {
+                return cached;
+            }
+
+            var brush = new Media.SolidColorBrush((Media.Color)Media.ColorConverter.ConvertFromString(color));
+            brush.Freeze();
+            BrushCache[color] = brush;
+            return brush;
+        }
+    }
 
     public static ThemeDefinition Get(string? id)
     {

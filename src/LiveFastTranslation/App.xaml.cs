@@ -146,6 +146,7 @@ public partial class App : Application
         _tray.Show();
 
         SyncAutostart(settingsService.Current);
+        WarmUpArgos(settingsService.Current);
 
         settingsService.Changed += OnSettingsChanged;
         _firstRun = isFirstRun;
@@ -177,6 +178,74 @@ public partial class App : Application
         {
             _tray.Notify("AI-режим", _lastTypingError, Forms.ToolTipIcon.Warning);
         }
+    }
+
+    /// <summary>
+    /// Starts the local Argos engine ahead of the first translation: importing argostranslate
+    /// and loading a language package takes seconds, while a warm process answers immediately.
+    /// </summary>
+    private static void WarmUpArgos(AppSettings settings)
+    {
+        if (settings.Provider.GetEffectiveProvider(settings.AiMode.Enabled) != ProviderKind.ArgosTranslate)
+        {
+            return;
+        }
+
+        var command = settings.Provider.GetProfile(ProviderKind.ArgosTranslate).Model;
+        var (source, target) = ResolveArgosWarmUpPair(settings);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+                var loaded = await ArgosTranslationWorker.Shared
+                    .WarmUpAsync(command ?? string.Empty, source, target, timeout.Token)
+                    .ConfigureAwait(false);
+                if (loaded)
+                {
+                    AppLogger.Info($"Argos Translate: локальный движок прогрет ({source}>{target}).");
+                }
+            }
+            catch (Exception exception)
+            {
+                AppLogger.Warn($"Argos Translate: прогрев не удался: {exception.Message}");
+            }
+        });
+    }
+
+    /// <summary>
+    /// Picks the pair worth preloading: the pair of the last translation while it still
+    /// matches the configured target, otherwise English → target (Russian for English).
+    /// </summary>
+    private static (string Source, string Target) ResolveArgosWarmUpPair(AppSettings settings)
+    {
+        var target = LanguageCatalog.ToArgosCode(settings.TargetLanguage);
+        var history = settings.History;
+        if (history.Count > 0)
+        {
+            var last = history[0];
+            var sourceCode = last.SourceLanguage;
+            if (string.IsNullOrWhiteSpace(sourceCode)
+                || sourceCode.Equals("auto", StringComparison.OrdinalIgnoreCase))
+            {
+                sourceCode = LanguageDetector.Detect(last.SourceText);
+            }
+
+            var lastTarget = LanguageCatalog.ToArgosCode(last.TargetLanguage);
+            if (string.Equals(lastTarget, target, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(sourceCode)
+                && !sourceCode.Equals("auto", StringComparison.OrdinalIgnoreCase))
+            {
+                var source = LanguageCatalog.ToArgosCode(sourceCode);
+                if (source.Length > 0 && !source.Equals(target, StringComparison.OrdinalIgnoreCase))
+                {
+                    return (source, target);
+                }
+            }
+        }
+
+        var fallback = target.Equals("en", StringComparison.OrdinalIgnoreCase) ? "ru" : "en";
+        return (fallback, target);
     }
 
     private void SyncAutostart(AppSettings settings)
@@ -302,7 +371,7 @@ public partial class App : Application
             return;
         }
 
-        var viewModel = new SettingsViewModel(_settings, _history, _autostart, _httpClient);
+        var viewModel = new SettingsViewModel(_settings, _history, _autostart, _httpClient, _theme);
         var window = new SettingsWindow(viewModel);
         _settingsWindow = window;
         window.Closed += (_, _) =>
@@ -361,6 +430,7 @@ public partial class App : Application
         }
 
         SyncAutostart(settings);
+        WarmUpArgos(settings);
         _overlay?.ApplySettings();
     }
 
@@ -457,6 +527,7 @@ public partial class App : Application
         _typingMonitor?.Dispose();
         _hotkeys?.Dispose();
         _overlay?.Dispose();
+        ArgosTranslationWorker.Shared.Shutdown();
         _tray?.Dispose();
         _theme?.Dispose();
 

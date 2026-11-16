@@ -298,6 +298,7 @@ public sealed class SettingsService
         settings.Appearance ??= new AppearanceSettings();
         settings.Appearance.Theme = ThemeCatalog.NormalizeId(settings.Appearance.Theme);
         settings.Appearance.Opacity = Math.Clamp(settings.Appearance.Opacity, 0.3, 1.0);
+        settings.Appearance.BackgroundOpacity = Math.Clamp(settings.Appearance.BackgroundOpacity, 0.15, 1.0);
         settings.Appearance.FontFamily = string.IsNullOrWhiteSpace(settings.Appearance.FontFamily)
             ? "Segoe UI"
             : settings.Appearance.FontFamily.Trim();

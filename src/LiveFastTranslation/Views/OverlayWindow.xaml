@@ -28,9 +28,9 @@
     <Grid Margin="10">
         <Border x:Name="Capsule"
                 AutomationProperties.AutomationId="OverlayCapsule"
-                MinHeight="40"
+                MinHeight="32"
                 CornerRadius="9"
-                Background="{DynamicResource OverlayBackgroundBrush}"
+                Background="Transparent"
                 BorderBrush="{DynamicResource OverlayBorderBrush}"
                 BorderThickness="1"
                 SnapsToDevicePixels="True">
@@ -47,35 +47,45 @@
 
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="32" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Drag handle and source-language badge -->
-                <Border Grid.Column="0"
-                        Background="Transparent"
-                        Cursor="SizeAll"
-                        ToolTip="{Binding DirectionText}"
-                        MouseLeftButtonDown="DragHandle_MouseLeftButtonDown">
-                    <TextBlock Text="{Binding SourceBadge}"
-                               AutomationProperties.AutomationId="OverlaySourceBadge"
-                               FontSize="12.5"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource AccentBrush}"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center" />
-                </Border>
+                <!-- Background is a separate layer, so its transparency never fades the text. -->
+                <Border Grid.ColumnSpan="3"
+                        Background="{DynamicResource OverlayBackgroundBrush}"
+                        CornerRadius="8"
+                        Opacity="{Binding BackgroundOpacity}"
+                        IsHitTestVisible="False" />
 
-                <Border Grid.Column="0"
-                        Width="1"
-                        Height="18"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Center"
-                        Background="{DynamicResource OverlaySeparatorBrush}" />
+                <!-- Source-language badge; hidden together with every control in minimal mode. -->
+                <Grid Grid.Column="0"
+                      Visibility="{Binding ShowOverlayControls, Converter={StaticResource BoolToVisibility}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="32" />
+                        <ColumnDefinition Width="1" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Background="Transparent"
+                            ToolTip="{Binding DirectionText}">
+                        <TextBlock Text="{Binding SourceBadge}"
+                                   AutomationProperties.AutomationId="OverlaySourceBadge"
+                                   FontSize="12.5"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AccentBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+
+                    <Border Grid.Column="1"
+                            Height="18"
+                            VerticalAlignment="Center"
+                            Background="{DynamicResource OverlaySeparatorBrush}" />
+                </Grid>
 
                 <!-- Content states -->
-                <Grid Grid.Column="1" MinHeight="38" Margin="10,0,8,0" VerticalAlignment="Center">
+                <Grid Grid.Column="1" MinHeight="30" Margin="12,2,10,2" VerticalAlignment="Center">
                     <Grid Visibility="{Binding ShowLoading, Converter={StaticResource BoolToVisibility}}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
@@ -136,8 +146,6 @@
                                Foreground="{DynamicResource ErrorBrush}"
                                FontSize="12"
                                TextWrapping="Wrap"
-                               TextTrimming="CharacterEllipsis"
-                               MaxHeight="{Binding MaxTranslationHeight}"
                                VerticalAlignment="Center"
                                Cursor="Hand"
                                MouseLeftButtonUp="Error_MouseLeftButtonUp" />
@@ -147,14 +155,15 @@
                             Cursor="Hand"
                             ToolTip="{Binding ActionHint}"
                             MouseLeftButtonUp="Result_MouseLeftButtonUp">
-                        <TextBlock AutomationProperties.AutomationId="OverlayTranslationText"
+                        <TextBlock x:Name="TranslationText"
+                                   AutomationProperties.AutomationId="OverlayTranslationText"
                                    Text="{Binding Translation}"
                                    FontFamily="{Binding OverlayFontFamily}"
                                    FontSize="{Binding OverlayFontSize}"
+                                   LineHeight="{Binding OverlayLineHeight}"
+                                   LineStackingStrategy="BlockLineHeight"
                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                    TextWrapping="Wrap"
-                                   TextTrimming="CharacterEllipsis"
-                                   MaxHeight="{Binding MaxTranslationHeight}"
                                    VerticalAlignment="Center" />
                     </Border>
 
@@ -179,11 +188,12 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- Target language, AI toggle, settings, close -->
+                <!-- Target language, AI toggle, settings, close; hidden in minimal mode. -->
                 <StackPanel Grid.Column="2"
                             Orientation="Horizontal"
                             VerticalAlignment="Center"
-                            Margin="0,0,5,0">
+                            Margin="0,0,5,0"
+                            Visibility="{Binding ShowOverlayControls, Converter={StaticResource BoolToVisibility}}">
                     <ComboBox AutomationProperties.AutomationId="OverlayLanguageCombo"
                               AutomationProperties.Name="Язык перевода"
                               Width="86"
@@ -207,12 +217,12 @@
                             Command="{Binding SettingsCommand}"
                             ToolTip="Настройки"
                             Margin="0,0,1,0">
-                        <Path Data="M 3 6 H 21 M 3 12 H 21 M 3 18 H 21 M 15.5 4 A 2 2 0 1 0 15.5 8 A 2 2 0 1 0 15.5 4 M 7.5 10 A 2 2 0 1 0 7.5 14 A 2 2 0 1 0 7.5 10 M 16.5 16 A 2 2 0 1 0 16.5 20 A 2 2 0 1 0 16.5 16"
+                        <Path Data="M 3 5 H 13 M 3 11 H 13 M 6 3 V 7 M 10 9 V 13"
                               Width="14"
                               Height="14"
                               Stretch="Uniform"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
-                              StrokeThickness="1.2"
+                              StrokeThickness="1.3"
                               StrokeStartLineCap="Round"
                               StrokeEndLineCap="Round"
                               StrokeLineJoin="Round" />

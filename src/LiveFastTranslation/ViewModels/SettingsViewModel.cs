@@ -2,7 +2,9 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
+using System.ComponentModel;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using LiveFastTranslation.Models;
@@ -10,6 +12,7 @@ using LiveFastTranslation.Services.History;
 using LiveFastTranslation.Services.Infrastructure;
 using LiveFastTranslation.Services.Input;
 using LiveFastTranslation.Services.Settings;
+using LiveFastTranslation.Services.Theme;
 using LiveFastTranslation.Services.Translation;
 using Brush = System.Windows.Media.Brush;
 using MediaBrushes = System.Windows.Media.Brushes;
@@ -68,37 +71,37 @@ public sealed class SettingsViewModel : ObservableObject
     {
         new SettingsSectionOption(
             SettingsSection.Provider,
-            "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z",
+            "M 5 12 H 11.5 A 3 3 0 0 1 11.5 6 H 10.5 A 4.5 4.5 0 1 0 5 12 Z",
             "Провайдер",
             "Argos Translate, ИИ-сервис, модель и язык перевода",
             "провайдер перевод argos ai openai claude gemini opencode модель api ключ язык"),
         new SettingsSectionOption(
             SettingsSection.Replacement,
-            "M8 3 4 7l4 4 M4 7h16 M16 21l4-4-4-4 M20 17H4",
+            "M 3 5.5 H 13 M 10.5 3 L 13 5.5 L 10.5 8 M 13 10.5 H 3 M 5.5 8 L 3 10.5 L 5.5 13",
             "Замена текста",
             "Способ вставки перевода и буфер обмена",
             "замена текст вставка буфер обмена курсор задержка стратегия"),
         new SettingsSectionOption(
             SettingsSection.Hotkeys,
-            "M3 6h18v12H3z M7 10h.01 M11 10h.01 M15 10h.01 M7 14h10",
+            "M 2 4.5 H 14 V 11.5 H 2 Z M 4.5 7 H 5 M 7 7 H 7.5 M 9.5 7 H 10 M 4.5 9.5 H 11.5",
             "Горячие клавиши",
             "Глобальные сочетания клавиш",
             "горячие клавиши хоткей сочетание клавиатура"),
         new SettingsSectionOption(
             SettingsSection.AiMode,
-            "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z M19 3v3 M20.5 4.5h-3",
+            "M 7 2 L 8.4 5.6 L 12 7 L 8.4 8.4 L 7 12 L 5.6 8.4 L 2 7 L 5.6 5.6 Z M 12.5 2 V 4 M 13.5 3 H 11.5",
             "AI-режим",
             "Перевод предложений во время набора",
             "ai режим задержка предложение буфер набор"),
         new SettingsSectionOption(
             SettingsSection.Appearance,
-            "M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z",
+            "M 8 2 A 6 6 0 1 0 14 8 A 5 5 0 0 1 8 2 Z",
             "Оформление",
             "64 темы, шрифт и прозрачность",
-            "тема оформление шрифт прозрачность размер язык флаги анимации"),
+            "тема оформление шрифт прозрачность размер язык флаги анимации минимализм строка оверлей"),
         new SettingsSectionOption(
             SettingsSection.Advanced,
-            "M4 6h10 M18 6h2 M4 12h4 M12 12h8 M4 18h12 M20 18h0 M16 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z M10 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z M18 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z",
+            "M 2 5 H 8 M 11 5 H 14 M 2 11 H 5 M 8 11 H 14 M 9.5 3 V 7 M 6.5 9 V 13",
             "Дополнительно",
             "Автозапуск, трей, история и файлы",
             "автозапуск трей история журнал папка версия служебные файлы")
@@ -123,7 +126,11 @@ public sealed class SettingsViewModel : ObservableObject
     private readonly HistoryService _historyService;
     private readonly AutostartService _autostartService;
     private readonly HttpClient _httpClient;
+    private readonly ThemeService? _themeService;
     private readonly AppSettings _draft;
+    private readonly ObservableCollection<ThemeDefinition> _themes = new(ThemeCatalog.All);
+    private readonly ListCollectionView _themesView;
+    private string _savedThemeId;
     private readonly AsyncRelayCommand _saveCommand;
     private readonly AsyncRelayCommand _testArgosTranslateCommand;
     private readonly AsyncRelayCommand _testAiProviderCommand;
@@ -158,15 +165,20 @@ public sealed class SettingsViewModel : ObservableObject
         SettingsService settings,
         HistoryService historyService,
         AutostartService autostartService,
-        HttpClient httpClient)
+        HttpClient httpClient,
+        ThemeService? themeService = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _historyService = historyService ?? throw new ArgumentNullException(nameof(historyService));
         _autostartService = autostartService ?? throw new ArgumentNullException(nameof(autostartService));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _themeService = themeService;
 
         _draft = SettingsService.Clone(settings.Current);
         _draft.History = settings.Current.History;
+        _savedThemeId = ThemeCatalog.NormalizeId(_draft.Appearance.Theme);
+        _themesView = new ListCollectionView(_themes);
+        _themesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(ThemeDefinition.GroupName)));
         _selectedAiProvider = ProviderCatalog.Get(_draft.Provider.AiProvider);
         if (_selectedAiProvider.Kind == ProviderKind.ArgosTranslate)
         {
@@ -208,7 +220,7 @@ public sealed class SettingsViewModel : ObservableObject
 
     public event EventHandler? Saved;
     public event EventHandler? CloseRequested;
-    public Func<string, string, bool>? Confirm { get; set; }
+    public Func<string, string, string, bool>? Confirm { get; set; }
 
     public ICommand SaveCommand { get; }
     public ICommand CancelCommand { get; }
@@ -225,7 +237,10 @@ public sealed class SettingsViewModel : ObservableObject
     public IReadOnlyList<SettingsSectionOption> Sections => SectionsList;
     public ObservableCollection<SettingsSectionOption> VisibleSections => _visibleSections;
     public IReadOnlyList<ProviderInfo> AiProviders => AiProvidersList;
-    public IReadOnlyList<ThemeDefinition> Themes => ThemeCatalog.All;
+    public ObservableCollection<ThemeDefinition> Themes => _themes;
+
+    /// <summary>Theme cards grouped into light and dark collections.</summary>
+    public ICollectionView ThemesView => _themesView;
 
     public ObservableCollection<string> AiAvailableModels { get; } = new();
     public ObservableCollection<string> ArgosAvailableModels { get; } = new();
@@ -556,10 +571,17 @@ public sealed class SettingsViewModel : ObservableObject
             if (value is null || !SetProperty(ref _selectedTheme, value)) return;
             _draft.Appearance.Theme = value.Id;
             OnPropertyChanged(nameof(SelectedThemeId));
+            _themeService?.Apply(value.Id);
         }
     }
 
     public string SelectedThemeId => _selectedTheme.Id;
+
+    /// <summary>Restores the saved theme after an unsaved live preview.</summary>
+    public void RevertThemePreview()
+    {
+        _themeService?.Apply(_savedThemeId);
+    }
 
     public double OpacityPercent
     {
@@ -567,6 +589,20 @@ public sealed class SettingsViewModel : ObservableObject
         set { var c = Math.Clamp(value, 0.3, 1.0); if (Math.Abs(_draft.Appearance.Opacity - c) < 0.0001) return; _draft.Appearance.Opacity = c; OnPropertiesChanged(nameof(OpacityPercent), nameof(OpacityText)); }
     }
     public string OpacityText => $"{_draft.Appearance.Opacity:P0}";
+
+    /// <summary>Background-only transparency (0 = solid, 0.7 = very translucent).</summary>
+    public double BackgroundTransparency
+    {
+        get => 1.0 - _draft.Appearance.BackgroundOpacity;
+        set
+        {
+            var clamped = Math.Clamp(1.0 - value, 0.3, 1.0);
+            if (Math.Abs(_draft.Appearance.BackgroundOpacity - clamped) < 0.0001) return;
+            _draft.Appearance.BackgroundOpacity = clamped;
+            OnPropertiesChanged(nameof(BackgroundTransparency), nameof(BackgroundTransparencyText));
+        }
+    }
+    public string BackgroundTransparencyText => $"{(1.0 - _draft.Appearance.BackgroundOpacity):P0}";
 
     public IReadOnlyList<string> FontFamilies => FontFamiliesList;
 
@@ -599,6 +635,12 @@ public sealed class SettingsViewModel : ObservableObject
     {
         get => _draft.Appearance.EnableAnimations;
         set { if (_draft.Appearance.EnableAnimations == value) return; _draft.Appearance.EnableAnimations = value; OnPropertyChanged(); }
+    }
+
+    public bool MinimalOverlay
+    {
+        get => _draft.Appearance.MinimalOverlay;
+        set { if (_draft.Appearance.MinimalOverlay == value) return; _draft.Appearance.MinimalOverlay = value; OnPropertyChanged(); }
     }
 
     public bool AutoStart
@@ -925,6 +967,7 @@ public sealed class SettingsViewModel : ObservableObject
         try
         {
             await _settings.ApplyAsync(_draft).ConfigureAwait(true);
+            _savedThemeId = _draft.Appearance.Theme;
         }
         catch (Exception exception)
         {
@@ -961,7 +1004,10 @@ public sealed class SettingsViewModel : ObservableObject
     private void ClearHistory()
     {
         if (Confirm is not null
-            && !Confirm("Очистить историю?", "Удалить все сохранённые переводы? Это действие нельзя отменить."))
+            && !Confirm(
+                "Очистить историю?",
+                "Удалить все сохранённые переводы? Это действие нельзя отменить.",
+                "Очистить"))
         {
             return;
         }

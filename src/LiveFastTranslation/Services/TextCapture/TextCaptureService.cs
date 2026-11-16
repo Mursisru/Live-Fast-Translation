@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Automation;
 using LiveFastTranslation.Interop;
 using LiveFastTranslation.Models;
@@ -50,7 +51,8 @@ public sealed class TextCaptureService : ITextCaptureService
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var (uiaText, element, sensitive, uiaError) = TryReadWithUiAutomation();
+        var (uiaText, element, sensitive, uiaError, uiaAnchor) = TryReadWithUiAutomation();
+        var fallbackAnchor = uiaAnchor ?? TextAnchorLocator.TryGetAnchor(targetWindow);
         if (sensitive)
         {
             return new TextCaptureResult
@@ -58,6 +60,7 @@ public sealed class TextCaptureService : ITextCaptureService
                 TargetWindow = targetWindow,
                 ProcessId = processId,
                 Element = element,
+                AnchorBounds = fallbackAnchor,
                 IsSensitive = true,
                 Error = "Поле ввода защищено. Чтение и перевод паролей отключены."
             };
@@ -65,12 +68,12 @@ public sealed class TextCaptureService : ITextCaptureService
 
         if (!string.IsNullOrWhiteSpace(uiaText))
         {
-            return CreateResult(uiaText, element, targetWindow, processId, CaptureMethod.UiAutomationTextPattern);
+            return CreateResult(uiaText, element, targetWindow, processId, CaptureMethod.UiAutomationTextPattern, fallbackAnchor);
         }
 
         if (Win32Focus.TryReadSelectedText(out var nativeText, out _))
         {
-            return CreateResult(nativeText, element, targetWindow, processId, CaptureMethod.Win32EditControl);
+            return CreateResult(nativeText, element, targetWindow, processId, CaptureMethod.Win32EditControl, fallbackAnchor);
         }
 
         if (!allowClipboardFallback)
@@ -80,6 +83,7 @@ public sealed class TextCaptureService : ITextCaptureService
                 TargetWindow = targetWindow,
                 ProcessId = processId,
                 Element = element,
+                AnchorBounds = fallbackAnchor,
                 Error = uiaError ?? "Не удалось прочитать выделенный текст. Включите запасной способ через буфер обмена в настройках."
             };
         }
@@ -87,7 +91,7 @@ public sealed class TextCaptureService : ITextCaptureService
         var clipboardText = await TryReadWithClipboardAsync(cancellationToken).ConfigureAwait(true);
         if (!string.IsNullOrWhiteSpace(clipboardText))
         {
-            return CreateResult(clipboardText, element, targetWindow, processId, CaptureMethod.Clipboard);
+            return CreateResult(clipboardText, element, targetWindow, processId, CaptureMethod.Clipboard, fallbackAnchor);
         }
 
         return new TextCaptureResult
@@ -95,6 +99,7 @@ public sealed class TextCaptureService : ITextCaptureService
             TargetWindow = targetWindow,
             ProcessId = processId,
             Element = element,
+            AnchorBounds = fallbackAnchor,
             Error = "Выделенный текст не найден. Выделите текст в другом приложении и повторите."
         };
     }
@@ -104,7 +109,8 @@ public sealed class TextCaptureService : ITextCaptureService
         AutomationElement? element,
         IntPtr targetWindow,
         int processId,
-        CaptureMethod method)
+        CaptureMethod method,
+        Rect? anchorBounds)
     {
         var trimmed = text.Trim();
         if (trimmed.Length > MaxTextLength)
@@ -114,6 +120,7 @@ public sealed class TextCaptureService : ITextCaptureService
                 TargetWindow = targetWindow,
                 ProcessId = processId,
                 Element = element,
+                AnchorBounds = anchorBounds,
                 Method = method,
                 Error = $"Выделено слишком много текста (максимум {MaxTextLength:N0} символов)."
             };
@@ -125,20 +132,22 @@ public sealed class TextCaptureService : ITextCaptureService
             Element = element,
             TargetWindow = targetWindow,
             ProcessId = processId,
+            AnchorBounds = anchorBounds,
             Method = method
         };
     }
 
-    private static (string? Text, AutomationElement? Element, bool Sensitive, string? Error) TryReadWithUiAutomation()
+    private static (string? Text, AutomationElement? Element, bool Sensitive, string? Error, Rect? Anchor) TryReadWithUiAutomation()
     {
         try
         {
             var focused = AutomationElement.FocusedElement;
             if (focused is null)
             {
-                return (null, null, false, "UI Automation не вернул активный элемент.");
+                return (null, null, false, "UI Automation не вернул активный элемент.", null);
             }
 
+            var anchor = TextAnchorLocator.TryGetElementBounds(focused);
             var current = focused;
             for (var level = 0; level < 5 && current is not null; level++)
             {
@@ -146,7 +155,7 @@ public sealed class TextCaptureService : ITextCaptureService
                 {
                     if (current.Current.IsPassword)
                     {
-                        return (null, focused, true, null);
+                        return (null, focused, true, null, anchor);
                     }
                 }
                 catch (ElementNotAvailableException)
@@ -157,7 +166,7 @@ public sealed class TextCaptureService : ITextCaptureService
                 var text = TryReadTextPattern(current);
                 if (!string.IsNullOrWhiteSpace(text))
                 {
-                    return (text, focused, false, null);
+                    return (text, focused, false, null, anchor);
                 }
 
                 try
@@ -170,17 +179,17 @@ public sealed class TextCaptureService : ITextCaptureService
                 }
             }
 
-            return (null, focused, false, "UI Automation не видит выделение в этом элементе.");
+            return (null, focused, false, "UI Automation не видит выделение в этом элементе.", anchor);
         }
         catch (Exception exception) when (exception is ElementNotAvailableException or InvalidOperationException)
         {
             AppLogger.Warn($"UI Automation capture failed: {exception.Message}");
-            return (null, null, false, "UI Automation недоступен для активного приложения.");
+            return (null, null, false, "UI Automation недоступен для активного приложения.", null);
         }
         catch (Exception exception)
         {
             AppLogger.Warn($"UI Automation capture failed: {exception.Message}");
-            return (null, null, false, "UI Automation недоступен для активного приложения.");
+            return (null, null, false, "UI Automation недоступен для активного приложения.", null);
         }
     }
 

@@ -36,9 +36,80 @@
         <DataTemplate x:Key="ProviderItemTemplate">
             <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
         </DataTemplate>
-        <DataTemplate x:Key="ThemeItemTemplate">
-            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+        <!-- Theme gallery card: a miniature of the app painted with the theme palette. -->
+        <DataTemplate x:Key="ThemeCardTemplate">
+            <Border Width="118"
+                    Height="88"
+                    Background="{Binding PreviewBackground}"
+                    BorderBrush="{Binding PreviewBorder}"
+                    BorderThickness="1"
+                    CornerRadius="5"
+                    Padding="7">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Width="18" Height="6" CornerRadius="2" Background="{Binding PreviewAccent}" />
+                        <Border Width="30" Height="4" CornerRadius="1" Background="{Binding PreviewMuted}"
+                                Margin="5,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <Border Grid.Row="1"
+                            Background="{Binding PreviewPanel}"
+                            BorderBrush="{Binding PreviewBorder}"
+                            BorderThickness="1"
+                            CornerRadius="3"
+                            Margin="0,6,0,0"
+                            Padding="6,0">
+                        <StackPanel VerticalAlignment="Center">
+                            <Border Height="4" Width="56" CornerRadius="1" HorizontalAlignment="Left"
+                                    Background="{Binding PreviewText}" />
+                            <Border Height="4" Width="38" CornerRadius="1" HorizontalAlignment="Left"
+                                    Background="{Binding PreviewMuted}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Grid.Row="2"
+                               Text="{Binding Name}"
+                               Foreground="{Binding PreviewText}"
+                               FontSize="10"
+                               Margin="0,5,0,0"
+                               TextTrimming="CharacterEllipsis" />
+                </Grid>
+            </Border>
         </DataTemplate>
+
+        <Style x:Key="ThemeCardItem" TargetType="{x:Type ListBoxItem}">
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
+            <Setter Property="AutomationProperties.AutomationId" Value="{Binding Id}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                        <Border x:Name="Selection"
+                                CornerRadius="7"
+                                BorderThickness="2"
+                                BorderBrush="Transparent"
+                                Padding="1">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Selection" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Selection" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <DataTemplate x:Key="LanguageItemTemplate">
             <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
         </DataTemplate>
@@ -48,7 +119,6 @@
 
         <Style x:Key="SectionStack" TargetType="{x:Type StackPanel}">
             <Setter Property="MaxWidth" Value="760" />
-            <Setter Property="HorizontalAlignment" Value="Left" />
             <Setter Property="Margin" Value="0,0,0,12" />
         </Style>
 
@@ -77,15 +147,12 @@
         <Style x:Key="CaptionButtonSmall" TargetType="{x:Type Button}" BasedOn="{StaticResource CaptionButton}" />
 
         <Style x:Key="StatusBadge" TargetType="{x:Type Border}" BasedOn="{StaticResource BadgeBorder}">
-            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="CornerRadius" Value="5" />
             <Setter Property="Padding" Value="7,2" />
             <Setter Property="Margin" Value="8,0,0,0" />
         </Style>
 
         <Style x:Key="ProviderComboItem" TargetType="{x:Type ComboBoxItem}" BasedOn="{StaticResource ComboBoxItemStyle}">
-            <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
-        </Style>
-        <Style x:Key="ThemeComboItem" TargetType="{x:Type ComboBoxItem}" BasedOn="{StaticResource ComboBoxItemStyle}">
             <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
         </Style>
         <Style x:Key="LanguageComboItem" TargetType="{x:Type ComboBoxItem}" BasedOn="{StaticResource ComboBoxItemStyle}">
@@ -145,9 +212,12 @@
                     <Button Style="{StaticResource CaptionButtonSmall}"
                             ToolTip="Свернуть"
                             Click="MinimizeButton_Click">
-                        <Path Data="M 4 8 H 14"
+                        <Path Data="M 3 8 H 13"
+                              Width="16"
+                              Height="16"
+                              Stretch="Uniform"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
-                              StrokeThickness="1.2"
+                              StrokeThickness="1.1"
                               StrokeStartLineCap="Round"
                               StrokeEndLineCap="Round" />
                     </Button>
@@ -156,18 +226,24 @@
                             ToolTip="Развернуть"
                             Click="MaximizeButton_Click">
                         <Path x:Name="MaximizeIcon"
-                              Data="M 4.5 4.5 H 13.5 V 13.5 H 4.5 Z"
+                              Data="M 3.5 3.5 H 12.5 V 12.5 H 3.5 Z"
+                              Width="16"
+                              Height="16"
+                              Stretch="Uniform"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
-                              StrokeThickness="1.2"
+                              StrokeThickness="1.1"
                               StrokeLineJoin="Round" />
                     </Button>
                     <Button Style="{StaticResource CloseCaptionButton}"
                             AutomationProperties.AutomationId="CloseButton"
                             ToolTip="Закрыть"
                             Click="CloseButton_Click">
-                        <Path Data="M 5 5 L 13 13 M 13 5 L 5 13"
+                        <Path Data="M 4 4 L 12 12 M 12 4 L 4 12"
+                              Width="16"
+                              Height="16"
+                              Stretch="Uniform"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
-                              StrokeThickness="1.2"
+                              StrokeThickness="1.1"
                               StrokeStartLineCap="Round"
                               StrokeEndLineCap="Round" />
                     </Button>
@@ -205,9 +281,9 @@
                                         <ColumnDefinition Width="22" />
                                     </Grid.ColumnDefinitions>
 
-                                    <Path Data="M 7.5 2.5 A 4.5 4.5 0 1 0 7.5 11.5 A 4.5 4.5 0 1 0 7.5 2.5 M 11 10.5 L 14 13.5"
-                                          Width="15"
-                                          Height="15"
+                                    <Path Data="M 7 2.5 A 4.5 4.5 0 1 0 7 11.5 A 4.5 4.5 0 1 0 7 2.5 M 10.4 10.4 L 14 14"
+                                          Width="16"
+                                          Height="16"
                                           Stretch="Uniform"
                                           Stroke="{DynamicResource TextMutedBrush}"
                                           StrokeThickness="1.3"
@@ -310,6 +386,7 @@
 
                 <!-- Content -->
                 <ScrollViewer Grid.Column="1"
+                              x:Name="SettingsContentScroll"
                               AutomationProperties.AutomationId="SettingsContentScroll"
                               VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled"
@@ -337,9 +414,9 @@
                                         <ColumnDefinition Width="22" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <Path Data="M 10 2 A 8 8 0 1 0 10 18 A 8 8 0 1 0 10 2 M 10 9 V 14 M 10 6.2 V 6.4"
-                                          Width="15"
-                                          Height="15"
+                                    <Path Data="M 8 2 A 6 6 0 1 0 8 14 A 6 6 0 1 0 8 2 M 8 7.2 V 11 M 8 4.8 V 5.1"
+                                          Width="16"
+                                          Height="16"
                                           Stretch="Uniform"
                                           Stroke="{DynamicResource AccentBrush}"
                                           StrokeThickness="1.4"
@@ -416,7 +493,8 @@
                                                             Style="{StaticResource StatusBadge}"
                                                             Background="{Binding ArgosTestBadgeBrush}"
                                                             Visibility="{Binding ShowArgosTestBadge, Converter={StaticResource BoolToVisibility}}">
-                                                        <TextBlock Text="{Binding ArgosTestBadgeText}"
+                                                        <TextBlock AutomationProperties.AutomationId="ArgosTestBadgeText"
+                                                                   Text="{Binding ArgosTestBadgeText}"
                                                                    Foreground="{DynamicResource OnAccentBrush}"
                                                                    FontSize="10"
                                                                    FontWeight="SemiBold" />
@@ -428,7 +506,7 @@
                                                            FontSize="11.5"
                                                            TextWrapping="Wrap"
                                                            Margin="0,7,0,0"
-                                                           Visibility="{Binding HasArgosTranslateTestStatus, Converter={StaticResource StringNotEmptyToVisibility}}" />
+                                                           Visibility="{Binding HasArgosTranslateTestStatus, Converter={StaticResource BoolToVisibility}}" />
                                             </StackPanel>
                                         </Grid>
                                     </Border>
@@ -544,9 +622,9 @@
                                                             Command="{Binding FetchAiModelsCommand}"
                                                             IsEnabled="{Binding IsNotFetchingAiModels}">
                                                         <Grid>
-                                                            <Path Data="M 13 4 A 5 5 0 1 0 14 9 M 13 4 V 1 M 13 4 H 16"
-                                                                  Width="14"
-                                                                  Height="14"
+                                                            <Path Data="M 11.5 3.5 A 4.5 4.5 0 1 0 12.5 8 M 11.5 3.5 V 0.9 M 11.5 3.5 H 14.1"
+                                                                  Width="16"
+                                                                  Height="16"
                                                                   Stretch="Uniform"
                                                                   Stroke="{DynamicResource TextSecondaryBrush}"
                                                                   StrokeThickness="1.3"
@@ -563,7 +641,7 @@
                                                            Text="{Binding AiModelsStatus}"
                                                            Style="{StaticResource HintText}"
                                                            Margin="0,5,0,0"
-                                                           Visibility="{Binding HasAiModelsStatus, Converter={StaticResource StringNotEmptyToVisibility}}" />
+                                                           Visibility="{Binding HasAiModelsStatus, Converter={StaticResource BoolToVisibility}}" />
                                             </StackPanel>
                                         </Grid>
                                     </Border>
@@ -660,7 +738,8 @@
                                                         Style="{StaticResource StatusBadge}"
                                                         Background="{Binding AiTestBadgeBrush}"
                                                         Visibility="{Binding ShowAiTestBadge, Converter={StaticResource BoolToVisibility}}">
-                                                    <TextBlock Text="{Binding AiTestBadgeText}"
+                                                    <TextBlock AutomationProperties.AutomationId="AiTestBadgeText"
+                                                               Text="{Binding AiTestBadgeText}"
                                                                Foreground="{DynamicResource OnAccentBrush}"
                                                                FontSize="10"
                                                                FontWeight="SemiBold" />
@@ -672,7 +751,7 @@
                                                        FontSize="11.5"
                                                        TextWrapping="Wrap"
                                                        Margin="0,7,0,0"
-                                                       Visibility="{Binding HasAiTestStatus, Converter={StaticResource StringNotEmptyToVisibility}}" />
+                                                       Visibility="{Binding HasAiTestStatus, Converter={StaticResource BoolToVisibility}}" />
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
@@ -1050,29 +1129,78 @@
                                     <StackPanel Style="{StaticResource CardHeader}">
                                         <TextBlock Text="Тема и шрифт" Style="{StaticResource SectionTitle}" />
                                         <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0"
-                                                   Text="Изменения применяются после сохранения." />
+                                                   Text="Тема применяется сразу для предпросмотра. Кнопка «Сохранить» закрепляет выбор." />
                                     </StackPanel>
                                     <Border Style="{StaticResource RowDivider}" />
 
                                     <Border Style="{StaticResource SettingRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="200" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel>
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
                                                 <TextBlock Text="Тема" Style="{StaticResource RowLabel}" Margin="0" />
-                                                <TextBlock Text="{Binding SelectedTheme.GroupName, StringFormat=Тип: {0}}" Style="{StaticResource HintText}" Margin="0,3,0,0" />
-                                            </StackPanel>
-                                            <ComboBox Grid.Column="1"
-                                                      AutomationProperties.AutomationId="ThemeCombo"
-                                                      AutomationProperties.Name="Тема"
-                                                      ItemsSource="{Binding Themes}"
-                                                      SelectedItem="{Binding SelectedTheme, Mode=TwoWay}"
-                                                      ItemTemplate="{StaticResource ThemeItemTemplate}"
-                                                      ItemContainerStyle="{StaticResource ThemeComboItem}"
-                                                      MaxDropDownHeight="380" />
-                                        </Grid>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding SelectedTheme.DisplayName}"
+                                                           FontSize="11.5"
+                                                           Foreground="{DynamicResource TextMutedBrush}"
+                                                           VerticalAlignment="Center" />
+                                            </Grid>
+                                            <ListBox x:Name="ThemeGallery"
+                                                     AutomationProperties.AutomationId="ThemeGallery"
+                                                     AutomationProperties.Name="Галерея тем"
+                                                     Height="318"
+                                                     Margin="0,10,0,0"
+                                                     Background="Transparent"
+                                                     BorderThickness="0"
+                                                     Padding="0"
+                                                     HorizontalContentAlignment="Stretch"
+                                                     ItemsSource="{Binding ThemesView}"
+                                                     SelectedItem="{Binding SelectedTheme, Mode=TwoWay}"
+                                                     ItemTemplate="{StaticResource ThemeCardTemplate}"
+                                                     ItemContainerStyle="{StaticResource ThemeCardItem}"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                     ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                                <ListBox.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <WrapPanel />
+                                                    </ItemsPanelTemplate>
+                                                </ListBox.ItemsPanel>
+                                                <ListBox.GroupStyle>
+                                                    <GroupStyle>
+                                                        <GroupStyle.ContainerStyle>
+                                                            <Style TargetType="{x:Type GroupItem}">
+                                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                                <Setter Property="Template">
+                                                                    <Setter.Value>
+                                                                        <ControlTemplate TargetType="{x:Type GroupItem}">
+                                                                            <StackPanel>
+                                                                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                                                                  ContentTemplate="{TemplateBinding ContentTemplate}" />
+                                                                                <ItemsPresenter />
+                                                                            </StackPanel>
+                                                                        </ControlTemplate>
+                                                                    </Setter.Value>
+                                                                </Setter>
+                                                            </Style>
+                                                        </GroupStyle.ContainerStyle>
+                                                        <GroupStyle.HeaderTemplate>
+                                                            <DataTemplate>
+                                                                <TextBlock Text="{Binding Name}"
+                                                                           Style="{StaticResource CaptionText}"
+                                                                           Margin="2,8,0,7" />
+                                                            </DataTemplate>
+                                                        </GroupStyle.HeaderTemplate>
+                                                        <GroupStyle.Panel>
+                                                            <ItemsPanelTemplate>
+                                                                <StackPanel Orientation="Vertical" />
+                                                            </ItemsPanelTemplate>
+                                                        </GroupStyle.Panel>
+                                                    </GroupStyle>
+                                                </ListBox.GroupStyle>
+                                            </ListBox>
+                                        </StackPanel>
                                     </Border>
                                     <Border Style="{StaticResource RowDivider}" />
 
@@ -1111,7 +1239,7 @@
                                                 <ColumnDefinition Width="200" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Непрозрачность" Style="{StaticResource RowLabel}" />
+                                            <TextBlock Text="Непрозрачность окна" Style="{StaticResource RowLabel}" />
                                             <Grid Grid.Column="1">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
@@ -1122,6 +1250,34 @@
                                                         VerticalAlignment="Center"
                                                         Value="{Binding OpacityPercent, Mode=TwoWay}" />
                                                 <TextBlock Grid.Column="1" Text="{Binding OpacityText}" Style="{StaticResource RowValue}" Margin="12,0,0,0" />
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource RowDivider}" />
+
+                                    <Border Style="{StaticResource SettingRow}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="200" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Margin="0,0,12,0">
+                                                <TextBlock Text="Прозрачность фона" Style="{StaticResource RowLabel}" Margin="0" />
+                                                <TextBlock Text="Текст остаётся полностью непрозрачным."
+                                                           Style="{StaticResource HintText}"
+                                                           Margin="0,3,0,0"
+                                                           TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <Grid Grid.Column="1">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Slider AutomationProperties.AutomationId="OverlayBackgroundTransparencySlider"
+                                                        Minimum="0" Maximum="0.7" SmallChange="0.01" LargeChange="0.05"
+                                                        VerticalAlignment="Center"
+                                                        Value="{Binding BackgroundTransparency, Mode=TwoWay}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding BackgroundTransparencyText}" Style="{StaticResource RowValue}" Margin="12,0,0,0" />
                                             </Grid>
                                         </Grid>
                                     </Border>
@@ -1166,6 +1322,18 @@
                                     <Border Style="{StaticResource SettingRow}">
                                         <CheckBox IsChecked="{Binding EnableAnimations, Mode=TwoWay}">
                                             <TextBlock Text="Включить анимации появления" FontSize="12.5" />
+                                        </CheckBox>
+                                    </Border>
+                                    <Border Style="{StaticResource RowDivider}" />
+
+                                    <Border Style="{StaticResource SettingRow}">
+                                        <CheckBox AutomationProperties.AutomationId="MinimalOverlayCheckBox"
+                                                  IsChecked="{Binding MinimalOverlay, Mode=TwoWay}">
+                                            <StackPanel>
+                                                <TextBlock Text="Минималистичный режим строки" FontSize="12.5" />
+                                                <TextBlock Text="Скрыть язык, AI, настройки и закрытие — останется только перевод."
+                                                           Style="{StaticResource HintText}" Margin="0,2,0,0" />
+                                            </StackPanel>
                                         </CheckBox>
                                     </Border>
                                 </StackPanel>
@@ -1276,29 +1444,37 @@
                                                     BorderBrush="{DynamicResource BorderBrush}"
                                                     BorderThickness="1"
                                                     CornerRadius="5">
-                                                <ListBox AutomationProperties.AutomationId="HistoryList"
-                                                         ItemsSource="{Binding HistoryEntries}"
-                                                         Height="136"
-                                                         Padding="4"
-                                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                                    <ListBox.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <StackPanel Margin="6,4">
-                                                                <TextBlock Text="{Binding Timestamp, StringFormat={}{0:dd.MM.yyyy HH:mm}}"
-                                                                           FontSize="10"
-                                                                           Foreground="{DynamicResource TextMutedBrush}" />
-                                                                <TextBlock Text="{Binding SourceText}"
-                                                                           FontSize="11.5"
-                                                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                           TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock Text="{Binding TranslatedText}"
-                                                                           FontSize="11"
-                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                           TextTrimming="CharacterEllipsis" />
-                                                            </StackPanel>
-                                                        </DataTemplate>
-                                                    </ListBox.ItemTemplate>
-                                                </ListBox>
+                                                <Grid>
+                                                    <ListBox AutomationProperties.AutomationId="HistoryList"
+                                                             ItemsSource="{Binding HistoryEntries}"
+                                                             Height="136"
+                                                             Padding="4"
+                                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                             Visibility="{Binding HasHistory, Converter={StaticResource BoolToVisibility}}">
+                                                        <ListBox.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <StackPanel Margin="6,4">
+                                                                    <TextBlock Text="{Binding Timestamp, StringFormat={}{0:dd.MM.yyyy HH:mm}}"
+                                                                               FontSize="10"
+                                                                               Foreground="{DynamicResource TextMutedBrush}" />
+                                                                    <TextBlock Text="{Binding SourceText}"
+                                                                               FontSize="11.5"
+                                                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                               TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock Text="{Binding TranslatedText}"
+                                                                               FontSize="11"
+                                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                               TextTrimming="CharacterEllipsis" />
+                                                                </StackPanel>
+                                                            </DataTemplate>
+                                                        </ListBox.ItemTemplate>
+                                                    </ListBox>
+                                                    <TextBlock Text="Последние переводы появятся здесь после вставки."
+                                                               Margin="14,16"
+                                                               FontSize="11.5"
+                                                               Foreground="{DynamicResource TextMutedBrush}"
+                                                               Visibility="{Binding HasHistory, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
+                                                </Grid>
                                             </Border>
                                             <Button AutomationProperties.AutomationId="ClearHistoryButton"
                                                     Content="Очистить историю"
@@ -1306,7 +1482,7 @@
                                                     Style="{StaticResource DangerGhostButton}"
                                                     HorizontalAlignment="Left"
                                                     Margin="0,9,0,0"
-                                                    IsEnabled="{Binding HasHistory}" />
+                                                    Visibility="{Binding HasHistory, Converter={StaticResource BoolToVisibility}}" />
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>

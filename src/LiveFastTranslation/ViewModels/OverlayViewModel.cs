@@ -36,8 +36,10 @@ public sealed class OverlayViewModel : ObservableObject
     private bool _hasError;
     private bool _hasNotice;
     private bool _isAiMode;
+    private bool _minimalOverlay;
     private bool _suppressNotifications;
     private double _windowOpacity = 0.96;
+    private double _backgroundOpacity = 1.0;
     private System.Windows.Media.FontFamily _overlayFontFamily = new("Segoe UI");
     private double _overlayFontSize = 13.5;
 
@@ -205,10 +207,32 @@ public sealed class OverlayViewModel : ObservableObject
         ? "Нажмите, чтобы скопировать перевод в буфер обмена"
         : "Нажмите, чтобы заменить выделенный текст переводом";
 
+    /// <summary>When enabled the capsule shows only the translation text: no badge, language, AI or settings controls.</summary>
+    public bool MinimalOverlay
+    {
+        get => _minimalOverlay;
+        private set
+        {
+            if (SetProperty(ref _minimalOverlay, value))
+            {
+                OnPropertyChanged(nameof(ShowOverlayControls));
+            }
+        }
+    }
+
+    public bool ShowOverlayControls => !MinimalOverlay;
+
     public double WindowOpacity
     {
         get => _windowOpacity;
         private set => SetProperty(ref _windowOpacity, value);
+    }
+
+    /// <summary>Background-only opacity; the text is never faded with it.</summary>
+    public double BackgroundOpacity
+    {
+        get => _backgroundOpacity;
+        private set => SetProperty(ref _backgroundOpacity, value);
     }
 
     public System.Windows.Media.FontFamily OverlayFontFamily
@@ -224,13 +248,13 @@ public sealed class OverlayViewModel : ObservableObject
         {
             if (SetProperty(ref _overlayFontSize, value))
             {
-                OnPropertyChanged(nameof(MaxTranslationHeight));
+                OnPropertyChanged(nameof(OverlayLineHeight));
             }
         }
     }
 
-    /// <summary>Roughly four lines at the current font size.</summary>
-    public double MaxTranslationHeight => Math.Round(OverlayFontSize * 1.32 * 4);
+    /// <summary>Compact line spacing: wrapped text stays fully visible in fewer pixels.</summary>
+    public double OverlayLineHeight => Math.Round(_overlayFontSize * 1.22, 1);
 
     public void ApplySettings(AppSettings settings)
     {
@@ -246,7 +270,9 @@ public sealed class OverlayViewModel : ObservableObject
 
             IsAiMode = settings.AiMode.Enabled;
             WindowOpacity = settings.Appearance.Opacity;
+            BackgroundOpacity = settings.Appearance.BackgroundOpacity;
             OverlayFontSize = settings.Appearance.FontSize;
+            MinimalOverlay = settings.Appearance.MinimalOverlay;
             try
             {
                 OverlayFontFamily = new System.Windows.Media.FontFamily(settings.Appearance.FontFamily);

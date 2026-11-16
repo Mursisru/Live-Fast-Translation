@@ -1,9 +1,12 @@
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using LiveFastTranslation.Interop;
 using LiveFastTranslation.ViewModels;
 using Button = System.Windows.Controls.Button;
 using ComboBox = System.Windows.Controls.ComboBox;
@@ -12,11 +15,12 @@ namespace LiveFastTranslation.Views;
 
 public partial class SettingsWindow : Window
 {
-    private const string MaximizeGlyph = "M 4.5 4.5 H 13.5 V 13.5 H 4.5 Z";
-    private const string RestoreGlyph = "M 4.5 6.5 H 11.5 V 13.5 H 4.5 Z M 6.5 6.5 V 4.5 H 13.5 V 11.5 H 11.5";
+    private const string MaximizeGlyph = "M 3.5 3.5 H 12.5 V 12.5 H 3.5 Z";
+    private const string RestoreGlyph = "M 3.5 6 H 10 V 12.5 H 3.5 Z M 6 6 V 3.5 H 12.5 V 10 H 10";
 
     private bool _initialSectionShown;
     private bool _skipClosePrompt;
+    private bool _savedInSession;
 
     public SettingsWindow(SettingsViewModel viewModel)
     {
@@ -25,9 +29,8 @@ public partial class SettingsWindow : Window
         DataContext = viewModel;
         viewModel.Saved += ViewModelOnSaved;
         viewModel.CloseRequested += ViewModelOnCloseRequested;
-        viewModel.Confirm = (title, message) =>
-            MessageBox.Show(this, message, title, MessageBoxButton.YesNo, MessageBoxImage.Question)
-            == MessageBoxResult.Yes;
+        viewModel.Confirm = (title, message, confirmText) =>
+            ConfirmDialog.Show(this, title, message, confirmText);
 
         Closed += OnClosed;
         Loaded += OnLoaded;
@@ -35,6 +38,55 @@ public partial class SettingsWindow : Window
     }
 
     public SettingsViewModel ViewModel { get; }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        var handle = new WindowInteropHelper(this).Handle;
+        HwndSource.FromHwnd(handle)?.AddHook(WindowProc);
+    }
+
+    // A WindowStyle=None window with WindowChrome maximises to the whole
+    // monitor, so the taskbar covers the footer. WM_GETMINMAXINFO lets the
+    // window fill the monitor work area on whichever display it is on.
+    private static IntPtr WindowProc(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (message != NativeMethods.WM_GETMINMAXINFO)
+        {
+            return IntPtr.Zero;
+        }
+
+        var monitor = NativeMethods.MonitorFromWindow(hwnd, NativeMethods.MONITOR_DEFAULTTONEAREST);
+        if (monitor == IntPtr.Zero)
+        {
+            return IntPtr.Zero;
+        }
+
+        var monitorInfo = new NativeMethods.MONITORINFO
+        {
+            cbSize = Marshal.SizeOf<NativeMethods.MONITORINFO>()
+        };
+        if (!NativeMethods.GetMonitorInfo(monitor, ref monitorInfo))
+        {
+            return IntPtr.Zero;
+        }
+
+        var dpi = (uint)NativeMethods.GetDpiForWindow(hwnd);
+        var borderX = NativeMethods.GetSystemMetricsForDpi(NativeMethods.SM_CXSIZEFRAME, dpi)
+                      + NativeMethods.GetSystemMetricsForDpi(NativeMethods.SM_CXPADDEDBORDER, dpi);
+        var borderY = NativeMethods.GetSystemMetricsForDpi(NativeMethods.SM_CYSIZEFRAME, dpi)
+                      + NativeMethods.GetSystemMetricsForDpi(NativeMethods.SM_CXPADDEDBORDER, dpi);
+
+        var info = Marshal.PtrToStructure<NativeMethods.MINMAXINFO>(lParam);
+        info.ptMaxPosition.X = monitorInfo.rcWork.Left - monitorInfo.rcMonitor.Left - borderX;
+        info.ptMaxPosition.Y = monitorInfo.rcWork.Top - monitorInfo.rcMonitor.Top - borderY;
+        info.ptMaxSize.X = monitorInfo.rcWork.Right - monitorInfo.rcWork.Left + borderX * 2;
+        info.ptMaxSize.Y = monitorInfo.rcWork.Bottom - monitorInfo.rcWork.Top + borderY * 2;
+        Marshal.StructureToPtr(info, lParam, true);
+
+        handled = true;
+        return IntPtr.Zero;
+    }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -50,6 +102,9 @@ public partial class SettingsWindow : Window
             return;
         }
 
+        // Sections share one ScrollViewer; without this a long section leaves the
+        // next one scrolled past its heading.
+        SettingsContentScroll.ScrollToTop();
         PlaySectionTransition();
     }
 
@@ -88,6 +143,7 @@ public partial class SettingsWindow : Window
     private void ViewModelOnSaved(object? sender, EventArgs e)
     {
         _skipClosePrompt = true;
+        _savedInSession = true;
         Close();
     }
 
@@ -234,15 +290,13 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        var result = MessageBox.Show(
+        var confirmed = ConfirmDialog.Show(
             this,
-            "Есть несохранённые изменения. Закрыть окно без сохранения?",
-            "Live-Fast Translation",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning,
-            MessageBoxResult.No);
+            "Закрыть без сохранения?",
+            "Есть несохранённые изменения. Они будут потеряны, если закрыть окно сейчас.",
+            "Закрыть без сохранения");
 
-        if (result != MessageBoxResult.Yes)
+        if (!confirmed)
         {
             e.Cancel = true;
         }
@@ -250,6 +304,12 @@ public partial class SettingsWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        if (!_savedInSession)
+        {
+            // The gallery previews themes live; discard it when nothing was saved.
+            ViewModel.RevertThemePreview();
+        }
+
         ViewModel.Saved -= ViewModelOnSaved;
         ViewModel.CloseRequested -= ViewModelOnCloseRequested;
         Loaded -= OnLoaded;

@@ -1,0 +1,120 @@
+# Проверочные скрипты
+
+Набор UI Automation тестов для Live-Fast Translation. Скрипты запускают настоящее
+приложение, работают с ним как пользователь (клавиатура, мышь, UIA-паттерны),
+делают скриншоты и пишут машинно-читаемый отчёт JSON.
+
+## Требования
+
+- Windows 10/11, Windows PowerShell 5.1 (входит в систему).
+- .NET SDK, которым собирается решение.
+- Python 3 с пакетом `argostranslate` — только для теста Argos Translate.
+- Собранное приложение:
+
+```powershell
+dotnet build LiveFastTranslation.slnx -v q
+```
+
+## Скрипты
+
+| Файл | Назначение | Время |
+| --- | --- | --- |
+| `smoke.ps1` | Быстрый запуск: окно настроек, Ctrl+F, поиск, Esc, все разделы, галерея из 64 тем, maximize. | ~12 с |
+| `test_e2e.ps1` | Полный сценарий настроек: первый запуск, поиск, Argos, OpenCode, хоткеи, живой предпросмотр темы, минималистичный режим, сохранение, второй инстанс, диалог несохранённых изменений. | ~1.5 мин |
+| `test_overlay.ps1` | Оверлей перевода: полный текст без обрезки, привязка над полем ввода, запрет перетаскивания, скорость тёплого Argos, AI-тумблер, минималистичный режим, закрытие. | ~1 мин |
+| `discover.ps1` | Дамп UIA-дерева и скриншоты разделов — для поиска AutomationId. | ~10 с |
+| `uia-helpers.ps1` | Общие функции; не запускается самостоятельно, подключается через dot-source. | — |
+
+Запуск из корня репозитория:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts\smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts\test_overlay.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts\test_e2e.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts\discover.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -STA -File scripts\discover.ps1 -Section Appearance
+```
+
+`-STA` обязателен: UI Automation и SendKeys требуют однопоточного апартамента.
+
+Параметры:
+
+- `-ExePath <path>` — проверить другую сборку (по умолчанию `src\LiveFastTranslation\bin\Debug\net8.0-windows\LiveFastTranslation.exe`).
+- `-KeepProfile` — не удалять временный профиль (`test_e2e.ps1`, `test_overlay.ps1`, `discover.ps1`), чтобы посмотреть `settings.json` и логи.
+- `-Section <name>` — `discover.ps1`: `Provider`, `Replacement`, `Hotkeys`, `AiMode`, `Appearance`, `Advanced` или `All`.
+
+Код возврата: `0` — все шаги прошли, `1` — есть падения.
+
+## Изоляция
+
+Каждый тест создаёт временную папку в `%TEMP%` и передаёт приложению:
+
+- `LFT_DATA_DIR` — профиль настроек, истории и логов;
+- `LFT_DISABLE_AUTOSTART=1` — запрет записи в `HKCU\...\Run`.
+
+Реальный `%AppData%\LiveFastTranslation` не изменяется; тесты дополнительно
+проверяют, что его `settings.json` не появился и не был перезаписан. Суффикс
+single-instance тоже привязан к профилю, поэтому тестовый инстанс не конфликтует
+с запущенным пользовательским приложением.
+
+Временный профиль удаляется в `finally`, даже если шаг упал. Процессы
+приложения и тестового окна завершаются принудительно по PID.
+
+## Артефакты и отчёт
+
+Результаты складываются в `scripts/artifacts/<suite>_<timestamp>/`:
+
+- `report.json` — длительность, список шагов, статусы `pass`/`fail`/`skipped`, тексты ошибок и пути к скриншотам;
+- `*.png` — ключевые экраны (светлая/тёмная тема, валидация, диалог, оверлей);
+- `*_tree.txt` — UIA-деревья из `discover.ps1`.
+
+Пример структуры отчёта:
+
+```json
+{
+  "startedAt": "2026-11-14T13:43:02.0000000+03:00",
+  "durationSeconds": 61.2,
+  "summary": { "total": 14, "passed": 14, "failed": 0, "skipped": 0 },
+  "steps": [ { "name": "Save settings with Ctrl+S", "status": "pass", "durationMs": 1341, "detail": "" } ],
+  "screenshots": [ "C:\\...\\13_unsaved_changes_prompt_....png" ]
+}
+```
+
+## Особенности реализации
+
+- Все `.ps1` — ASCII-only. Windows PowerShell 5.1 без BOM ломает кириллицу в
+  строковых литералах, поэтому русские подписи собираются из кодов символов,
+  а поиск элементов идёт по `AutomationId`, а не по отображаемому тексту.
+- Ввод клавиш выполняется через `keybd_event` с виртуальными кодами
+  (`Send-VirtualKeys`). `SendKeys` не отправляет латинские буквы, если активна
+  русская раскладка: `VkKeyScan` не находит символ.
+- Тест Argos Translate больше не ждёт запуска Python на каждый перевод: приложение
+  держит один прогретый процесс с кэшем языковых пар и заранее загружает пару из
+  последнего перевода (или en→целевой), поэтому первый перевод после старта тоже
+  быстрый. Смена целевого языка всё равно загружает новый пакет: первый холодный
+  перевод в E2E ждёт до 150 секунд, в overlay-тесте — до 60 секунд, а повторный
+  проверяется порогом 10 с.
+- `test_overlay.ps1` компилирует крошечное WinForms-окно с длинным текстом во
+  временном профиле. Это детерминированный источник выделенного текста: не
+  затрагивает открытый Блокнот пользователя и не зависит от его вкладок. Тест
+  проверяет, что капсула выросла под весь перевод, стоит над полем ввода, не
+  сдвигается перетаскиванием и в минималистичном режиме оставляет только текст.
+- Галерея тем — `ListBox` с `AutomationId` карточек, равным id темы
+  (`light-sky`, `dark-paper`, ...). Тесты выбирают тему через
+  `SelectionItemPattern`, а не стрелками в комбобоксе.
+- Диалог несохранённых изменений — собственное окно приложения
+  (`ConfirmDialog`), а не системный MessageBox. Он виден в UIA из
+  `TreeScope.Descendants`, поддерживает Esc = «Отмена» и имеет AutomationId
+  `ConfirmDialogCancelButton` / `ConfirmDialogConfirmButton`.
+
+## Если тест упал
+
+1. Откройте `report.json` и найдите шаг со статусом `fail` — в `detail` будет
+   текст исключения или assert.
+2. Посмотрите последний PNG перед падением.
+3. Для падений внутри раздела запустите `discover.ps1 -Section <name>` и
+   сверьте AutomationId в `*_tree.txt`.
+4. Повторите проблемный сценарий с `-KeepProfile`, затем изучите
+   `<profile>\settings.json` и `<profile>\logs\app.log`.
+5. Убедитесь, что не запущен второй экземпляр приложения с тем же профилем
+   (суффикс single-instance уникален для каждого профиля).

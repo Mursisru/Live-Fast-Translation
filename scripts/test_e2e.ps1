@@ -233,14 +233,22 @@ function Assert-SettingsUnchanged {
 
 function New-DialogFinder {
     param([int]$ProcessId)
-    return {
-        foreach ($candidate in (Get-ProcessWindows -ProcessId $ProcessId)) {
-            try {
-                if ([string]$candidate.Current.Name -eq 'Live-Fast Translation') { return $candidate }
-            } catch { }
-        }
-        $null
+    $block = {
+        $root = [System.Windows.Automation.AutomationElement]::RootElement
+        $conditions = @(
+            [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $ProcessId),
+            [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::NameProperty, 'Live-Fast Translation'),
+            [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+                [System.Windows.Automation.ControlType]::Window)
+        )
+        $condition = [System.Windows.Automation.AndCondition]::new(
+            [System.Windows.Automation.Condition[]]$conditions)
+        $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
     }
+    return $block.GetNewClosure()
 }
 
 $runStamp = Get-Date -Format 'yyyyMMdd_HHmmss'
@@ -270,7 +278,7 @@ try {
         $script:Window = Wait-Window -ProcessId $script:Process.Id -Title $script:SettingsTitle -Exact -TimeoutMs 30000
         Start-Sleep -Milliseconds 1200
         Set-WindowForeground $script:Window
-        $null = Wait-ForElement -AutomationId 'SettingsTitleText' -TimeoutMs 8000
+        $null = Wait-ForElement -AutomationId 'SettingsTitleText' -TimeoutMs 20000
         Assert-True (-not $script:Process.HasExited) 'Application exited during startup.'
         Save-Shot -Name '01_first_run_light'
     }
@@ -290,7 +298,7 @@ try {
             Replacement = 'StrategyCombo'
             Hotkeys = 'TranslateHotkeyBox'
             AiMode = 'AiModeEnabledCheckBox'
-            Appearance = 'ThemeCombo'
+            Appearance = 'ThemeGallery'
             Advanced = 'AutoStartCheckBox'
         }
 
@@ -313,7 +321,7 @@ try {
         Set-SearchText -Text $script:SearchTheme
         Wait-NavItemCount -Expected 1 | Out-Null
         Assert-True ((Get-NavItemCount) -eq 1) 'Search for the russian word for "theme" must leave exactly one section.'
-        Assert-True ($null -ne (Find-Now -AutomationId 'ThemeCombo')) 'Appearance section must become selected after the search.'
+        Assert-True ($null -ne (Find-Now -AutomationId 'ThemeGallery')) 'Appearance section must become selected after the search.'
         Save-Shot -Name '04_search_theme'
 
         Set-SearchText -Text 'zzzz-no-match'
@@ -334,7 +342,7 @@ try {
         Invoke-Element $testButton
 
         $finalBadge = Wait-Until -TimeoutMs 150000 -IntervalMs 250 -Condition {
-            $badge = Find-Now -AutomationId 'ArgosTestBadge'
+            $badge = Find-Now -AutomationId 'ArgosTestBadgeText'
             if (-not $badge) { return $null }
             $name = [string]$badge.Current.Name
             if ($name -eq $script:WordSuccess -or $name -eq $script:WordError) { return $name }
@@ -370,8 +378,12 @@ try {
     Invoke-Step -Name 'Duplicate hotkey is rejected and reset restores defaults' {
         Select-Nav -Section 'Hotkeys'
         $input = Wait-ForElement -AutomationId 'TranslateHotkeyInput' -TimeoutMs 6000
-        Focus-Element $input
-        Send-KeysToWindow -Window $script:Window -Keys '^%s'
+        Send-VirtualKeysToElement -Window $script:Window -Element $input -VirtualKeys @(0x11, 0x10, 0x51)
+        Start-Sleep -Milliseconds 250
+        Assert-True ((Get-Value $input) -eq 'Ctrl+Shift+Q') ("Translate hotkey capture failed, value is '{0}'." -f (Get-Value $input))
+
+        $aiInput = Wait-ForElement -AutomationId 'AiHotkeyInput' -TimeoutMs 4000
+        Send-VirtualKeysToElement -Window $script:Window -Element $aiInput -VirtualKeys @(0x11, 0x10, 0x51)
         $validation = Wait-ForElement -AutomationId 'HotkeyValidationText' -TimeoutMs 5000
         Start-Sleep -Milliseconds 200
         Assert-True (-not [string]::IsNullOrWhiteSpace([string]$validation.Current.Name)) 'Duplicate hotkey must show a validation message.'
@@ -389,27 +401,56 @@ try {
         Save-Shot -Name '09_hotkey_reset'
     }
 
-    Invoke-Step -Name 'Change theme and overlay opacity' {
+    Invoke-Step -Name 'Theme gallery applies live preview and minimal mode' {
         Select-Nav -Section 'Appearance'
-        $themeCombo = Wait-ForElement -AutomationId 'ThemeCombo' -TimeoutMs 6000
-        Focus-Element $themeCombo
-        Send-KeysToWindow -Window $script:Window -Keys '{END}'
-        Start-Sleep -Milliseconds 400
-        $selectedTheme = Get-ComboSelectionNameSafe -Element $themeCombo
-        if ($selectedTheme) {
-            Write-Host "       selected theme: $selectedTheme" -ForegroundColor DarkGray
-        }
+        $gallery = Wait-ForElement -AutomationId 'ThemeGallery' -TimeoutMs 6000
+        $cards = $gallery.FindAll(
+            [System.Windows.Automation.TreeScope]::Descendants,
+            [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+                [System.Windows.Automation.ControlType]::ListItem))
+        Assert-True ($cards.Count -eq 64) ("Theme gallery must expose 64 cards, found {0}." -f $cards.Count)
+
+        $nav = Wait-ForElement -AutomationId 'NavSections' -TimeoutMs 4000
+        $lightNavShot = Save-Screenshot -Name '10a_appearance_nav_light' -Element $nav
+        $script:Screenshots.Add($lightNavShot)
+        $lightNavLuminance = Get-ImageLuminance -Path $lightNavShot
+
+        $darkPaper = Wait-ForElement -AutomationId 'dark-paper' -TimeoutMs 5000
+        try { Scroll-IntoView $darkPaper } catch { }
+        (Get-Pattern $darkPaper ([System.Windows.Automation.SelectionItemPattern]::Pattern)).Select()
+        Start-Sleep -Milliseconds 600
+        $darkSelected = (Get-Pattern $darkPaper ([System.Windows.Automation.SelectionItemPattern]::Pattern)).Current.IsSelected
+        Assert-True $darkSelected 'Selecting the dark-paper card must select it.'
+
+        $darkNavShot = Save-Screenshot -Name '10b_appearance_nav_dark' -Element $nav
+        $script:Screenshots.Add($darkNavShot)
+        $darkNavLuminance = Get-ImageLuminance -Path $darkNavShot
+        Write-Host ("       nav luminance: light {0:0.0} -> dark {1:0.0}" -f $lightNavLuminance, $darkNavLuminance) -ForegroundColor DarkGray
+        Assert-True ($darkNavLuminance -lt ($lightNavLuminance - 30)) 'Theme selection must apply live: the navigation must become darker.'
+
+        $minimal = Wait-ForElement -AutomationId 'MinimalOverlayCheckBox' -TimeoutMs 4000
+        Set-Toggle -Element $minimal -State 'On'
+        Start-Sleep -Milliseconds 250
+
         $opacity = Wait-ForElement -AutomationId 'OverlayOpacitySlider' -TimeoutMs 4000
         Set-RangeValue -Element $opacity -Value 0.9
         Start-Sleep -Milliseconds 300
         $range = Get-Pattern $opacity ([System.Windows.Automation.RangeValuePattern]::Pattern)
         Assert-True ([Math]::Abs($range.Current.Value - 0.9) -lt 0.02) 'Overlay opacity slider did not accept 0.9.'
-        Save-Shot -Name '10_appearance_dark_preview'
+
+        $background = Wait-ForElement -AutomationId 'OverlayBackgroundTransparencySlider' -TimeoutMs 4000
+        Set-RangeValue -Element $background -Value 0.25
+        Start-Sleep -Milliseconds 300
+        $backgroundRange = Get-Pattern $background ([System.Windows.Automation.RangeValuePattern]::Pattern)
+        Assert-True ([Math]::Abs($backgroundRange.Current.Value - 0.25) -lt 0.02) 'Background transparency slider did not accept 0.25.'
+        Save-Shot -Name '10_appearance_dark_selected'
     }
 
     Invoke-Step -Name 'Save settings with Ctrl+S' {
         $shotsBefore = $script:Screenshots.Count
-        Send-KeysToWindow -Window $script:Window -Keys '^s'
+        $search = Wait-ForElement -AutomationId 'SettingsSearchBox' -TimeoutMs 4000
+        Send-VirtualKeysToElement -Window $script:Window -Element $search -VirtualKeys @(0x11, 0x53)
         Wait-WindowGone -ProcessId $script:Process.Id -Title $script:SettingsTitle -TimeoutMs 12000 | Out-Null
         Start-Sleep -Milliseconds 600
         Assert-True (-not $script:Process.HasExited) 'Application must stay alive in the tray after saving.'
@@ -426,7 +467,9 @@ try {
         Assert-True ($settings.provider.profiles.OpenCode.model -eq 'big-pickle') 'OpenCode model must be persisted.'
         Assert-True ($settings.provider.profiles.OpenCode.apiKey -eq '') 'Empty API key must stay empty for OpenCode.'
         Assert-True ($settings.appearance.theme -eq 'dark-paper') 'The last theme in the catalog (dark-paper) must be saved.'
+        Assert-True ($settings.appearance.minimalOverlay -eq $true) 'Minimal overlay mode must be saved.'
         Assert-True ([Math]::Abs([double]$settings.appearance.opacity - 0.9) -lt 0.02) 'Saved overlay opacity must be 0.9.'
+        Assert-True ([Math]::Abs([double]$settings.appearance.backgroundOpacity - 0.75) -lt 0.02) 'Saved background opacity must be 0.75.'
         Assert-True ($settings.hotkeys.translateSelection -eq 'Ctrl+Alt+T') 'Reset translate hotkey must be persisted.'
         Assert-True ($settings.hotkeys.toggleAiMode -eq 'Ctrl+Alt+A') 'AI hotkey must keep its default.'
         Assert-True ($settings.hotkeys.openSettings -eq 'Ctrl+Alt+S') 'Settings hotkey must keep its default.'
@@ -460,11 +503,16 @@ try {
         Send-KeysToWindow -Window $script:Window -Keys '{ESC}'
         $dialog = Wait-Until -TimeoutMs 6000 -IntervalMs 150 -Condition (New-DialogFinder -ProcessId $script:Process.Id) `
             -TimeoutMessage 'Unsaved-changes confirmation dialog did not appear.'
+        $dialogMessage = Find-Now -AutomationId 'ConfirmDialogMessage' -Root $dialog
+        Assert-True ($null -ne $dialogMessage) 'Confirmation dialog must explain that unsaved changes will be lost.'
         Save-Shot -Name '13_unsaved_changes_prompt' -Element $dialog
-        Send-KeysToWindow -Window $dialog -Keys '{ESC}'
+
+        $cancel = Find-Now -AutomationId 'ConfirmDialogCancelButton' -Root $dialog
+        Assert-True ($null -ne $cancel) 'Confirmation dialog must offer a safe cancel button.'
+        Invoke-Element $cancel
         Wait-Until -TimeoutMs 5000 -IntervalMs 150 -Condition {
             if ($null -eq (& (New-DialogFinder -ProcessId $script:Process.Id))) { $true } else { $false }
-        } -TimeoutMessage 'Confirmation dialog did not close on Escape.' | Out-Null
+        } -TimeoutMessage 'Confirmation dialog did not close after choosing cancel.' | Out-Null
 
         $stillOpen = Wait-Window -ProcessId $script:Process.Id -Title $script:SettingsTitle -Exact -TimeoutMs 5000
         Assert-True ($null -ne $stillOpen) 'Declining the prompt must keep the settings window open.'

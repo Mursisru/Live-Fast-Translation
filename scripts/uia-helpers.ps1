@@ -20,6 +20,7 @@ namespace LftUia {
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
+    [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
   }
 }
@@ -202,7 +203,7 @@ function Find-Element {
     if ($conditions.Count -eq 0) {
         throw 'Find-Element needs AutomationId, Name or ControlType'
     }
-    $condition = if ($conditions.Count -eq 1) {
+    $elementCondition = if ($conditions.Count -eq 1) {
         $conditions[0]
     } else {
         [System.Windows.Automation.AndCondition]::new(
@@ -211,7 +212,7 @@ function Find-Element {
 
     try {
         return Wait-Until -TimeoutMs $TimeoutMs -Condition {
-            $Root.FindFirst($Scope, $condition)
+            $Root.FindFirst($Scope, $elementCondition)
         }
     } catch {
         throw "Element not found in ${TimeoutMs}ms: Id='$AutomationId' Name='$Name' Type='$ControlType'"
@@ -397,11 +398,57 @@ function Send-KeysToWindow {
     param(
         [Parameter(Mandatory)]$Window,
         [Parameter(Mandatory)][string]$Keys,
-        [int]$DelayMs = 220
+        [int]$DelayMs = 220,
+        [switch]$SkipForeground
     )
-    Set-WindowForeground $Window
+    if (-not $SkipForeground) { Set-WindowForeground $Window }
     Start-Sleep -Milliseconds $DelayMs
     [System.Windows.Forms.SendKeys]::SendWait($Keys)
+}
+
+function Send-KeysToElement {
+    param(
+        [Parameter(Mandatory)]$Window,
+        [Parameter(Mandatory)]$Element,
+        [Parameter(Mandatory)][string]$Keys,
+        [int]$DelayMs = 180
+    )
+    Set-WindowForeground $Window
+    Focus-Element $Element
+    Start-Sleep -Milliseconds $DelayMs
+    [System.Windows.Forms.SendKeys]::SendWait($Keys)
+}
+
+# SendKeys maps characters through the active keyboard layout, so latin letters
+# are silently dropped when a russian layout is active. Virtual-key input is
+# layout independent: 0x11=Ctrl, 0x12=Alt, 0x10=Shift, 0x5B=Win.
+function Send-VirtualKeys {
+    param(
+        [Parameter(Mandatory)][int[]]$VirtualKeys,
+        [int]$HoldMs = 30,
+        [int]$GapMs = 20
+    )
+    foreach ($vk in $VirtualKeys) {
+        [LftUia.Native]::keybd_event([byte]$vk, 0, 0, [UIntPtr]::Zero)
+        Start-Sleep -Milliseconds $HoldMs
+    }
+    for ($i = $VirtualKeys.Count - 1; $i -ge 0; $i--) {
+        [LftUia.Native]::keybd_event([byte]$VirtualKeys[$i], 0, 2, [UIntPtr]::Zero)
+        Start-Sleep -Milliseconds $GapMs
+    }
+}
+
+function Send-VirtualKeysToElement {
+    param(
+        [Parameter(Mandatory)]$Window,
+        [Parameter(Mandatory)]$Element,
+        [Parameter(Mandatory)][int[]]$VirtualKeys,
+        [int]$DelayMs = 180
+    )
+    Set-WindowForeground $Window
+    Focus-Element $Element
+    Start-Sleep -Milliseconds $DelayMs
+    Send-VirtualKeys -VirtualKeys $VirtualKeys
 }
 
 function Invoke-PointClick {
@@ -411,6 +458,41 @@ function Invoke-PointClick {
     Start-Sleep -Milliseconds 60
     [LftUia.Native]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
     [LftUia.Native]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+}
+
+function Invoke-PointRightClick {
+    param([Parameter(Mandatory)]$Element)
+    $point = $Element.GetClickablePoint()
+    [LftUia.Native]::SetCursorPos([int]$point.X, [int]$point.Y) | Out-Null
+    Start-Sleep -Milliseconds 60
+    [LftUia.Native]::mouse_event(0x0008, 0, 0, 0, [UIntPtr]::Zero)
+    [LftUia.Native]::mouse_event(0x0010, 0, 0, 0, [UIntPtr]::Zero)
+}
+
+# Presses the left button on an element and drags by a screen offset. Used to prove
+# that the overlay cannot be moved away from its anchor.
+function Invoke-MouseDrag {
+    param(
+        [Parameter(Mandatory)]$Element,
+        [int]$OffsetX = 80,
+        [int]$OffsetY = 40,
+        [int]$Steps = 4
+    )
+    $point = $Element.GetClickablePoint()
+    $startX = [int]$point.X
+    $startY = [int]$point.Y
+    [LftUia.Native]::SetCursorPos($startX, $startY) | Out-Null
+    Start-Sleep -Milliseconds 80
+    [LftUia.Native]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 100
+    for ($step = 1; $step -le $Steps; $step++) {
+        [LftUia.Native]::SetCursorPos(
+            $startX + [int]($OffsetX * $step / $Steps),
+            $startY + [int]($OffsetY * $step / $Steps)) | Out-Null
+        Start-Sleep -Milliseconds 60
+    }
+    [LftUia.Native]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 120
 }
 
 # ------------------------------------------------------------- screenshot ---
